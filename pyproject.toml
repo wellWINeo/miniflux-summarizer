@@ -23,5 +23,8 @@ dev = [
 [project.scripts]
 miniflux-summarizer = "miniflux_summarizer.cli:main"
 
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
