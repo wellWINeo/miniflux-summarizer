@@ -129,7 +129,7 @@ def test_full_pipeline_with_filtering():
 
     with (
         patch("miniflux_summarizer.client.miniflux") as mock_mf,
-        patch("miniflux_summarizer.digest.generate_summary", return_value="Summary"),
+        patch("miniflux_summarizer.digest.generate_summary", return_value="Summary") as mock_llm,
         patch("miniflux_summarizer.client.httpx.post") as mock_post,
         patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "daily", "--since=-1d"]),
     ):
@@ -161,6 +161,7 @@ def test_full_pipeline_with_filtering():
 
         main()
 
-        mock_post.assert_called_once()
-        call_kwargs = mock_post.call_args[1]["json"]
-        assert "Sponsored" not in call_kwargs["content"] or "Real Article" in str(mock_post.call_args)
+        mock_llm.assert_called_once()
+        entries_text = mock_llm.call_args[1]["entries_text"]
+        assert "Sponsored: Buy stuff" not in entries_text
+        assert "Real Article" in entries_text

@@ -30,7 +30,7 @@ def test_parse_period_invalid():
         parse_period("invalid")
 
 
-@patch("miniflux_summarizer.digest.run_digest")
+@patch("miniflux_summarizer.cli.run_digest")
 def test_cli_main_invokes_digest(mock_run):
     from miniflux_summarizer.cli import main
 

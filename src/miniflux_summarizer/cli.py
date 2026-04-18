@@ -5,6 +5,7 @@ import sys
 import time
 
 from miniflux_summarizer.config import load_config
+from miniflux_summarizer.digest import run_digest
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,6 @@ def main():
         sys.exit(1)
 
     since_timestamp = int(time.time()) - period_seconds
-
-    from miniflux_summarizer.digest import run_digest
 
     logger.info("Running agent '%s' with period %s (since %d)", args.agent, args.since, since_timestamp)
     run_digest(config, since_timestamp)

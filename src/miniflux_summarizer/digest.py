@@ -11,9 +11,12 @@ from miniflux_summarizer.llm import generate_summary
 logger = logging.getLogger(__name__)
 
 
+def _format_date(now: datetime) -> str:
+    return now.strftime("%Y-%m-%d")
+
+
 def generate_digest_title(agent_name: str, now: datetime) -> str:
-    date_str = now.strftime("%Y-%m-%d")
-    return f"{agent_name} Digest — {date_str}"
+    return f"{agent_name} Digest — {_format_date(now)}"
 
 
 def build_entries_text(entries: list[dict]) -> str:
@@ -21,7 +24,7 @@ def build_entries_text(entries: list[dict]) -> str:
     for entry in entries:
         title = entry.get("title", "Untitled")
         url = entry.get("url", "")
-        content_html = entry.get("content", "")
+        content_html = entry.get("content") or ""
         content_md = html_to_markdown(content_html)
         parts.append(f"## {title}\nURL: {url}\n\n{content_md}")
     return "\n\n---\n\n".join(parts)
@@ -32,6 +35,13 @@ def run_digest(config: Config, since_timestamp: int) -> None:
         base_url=config.miniflux_base_url,
         api_key=config.miniflux_api_key,
     )
+
+    valid_sources = ("raw_entries", "digests")
+    if config.agent.source not in valid_sources:
+        raise ValueError(
+            f"Invalid source '{config.agent.source}' for agent '{config.agent_name}'. "
+            f"Must be one of {valid_sources}"
+        )
 
     if config.agent.source == "raw_entries":
         entries = client.fetch_raw_entries(published_after=since_timestamp)
@@ -62,8 +72,8 @@ def run_digest(config: Config, since_timestamp: int) -> None:
     )
 
     now = datetime.now(timezone.utc)
+    date_str = _format_date(now)
     title = generate_digest_title(config.agent_name, now)
-    date_str = now.strftime("%Y-%m-%d")
     external_id = f"miniflux-summarizer:{config.agent_name}:{date_str}"
     url = f"{config.miniflux_base_url}/digest/{config.agent_name}/{date_str}"
 

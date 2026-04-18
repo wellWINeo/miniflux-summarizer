@@ -1,5 +1,4 @@
 import json
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,14 +48,12 @@ def load_config(config_path: Path, agent_name: str) -> Config:
     raw = json.loads(Path(config_path).read_text())
 
     if agent_name not in raw.get("agents", {}):
-        print(f"Error: agent '{agent_name}' not found in config", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError(f"Error: agent '{agent_name}' not found in config")
 
     agent_raw = raw["agents"][agent_name]
 
     if agent_raw["source"] == "digests" and "source_feed_id" not in agent_raw:
-        print(f"Error: agent '{agent_name}' with source 'digests' requires 'source_feed_id'", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError(f"Error: agent '{agent_name}' with source 'digests' requires 'source_feed_id'")
 
     agent = AgentConfig(
         name=agent_name,

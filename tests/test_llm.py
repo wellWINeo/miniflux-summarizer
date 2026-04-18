@@ -50,4 +50,5 @@ def test_generate_summary_passes_model_and_url(MockOpenAI):
     MockOpenAI.assert_called_once_with(
         base_url="https://llm.custom.com/v1",
         api_key="key",
+        timeout=60.0,
     )

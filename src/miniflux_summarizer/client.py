@@ -48,6 +48,7 @@ class MinifluxClient:
                 "status": "unread",
                 "external_id": external_id,
             },
+            timeout=60.0,
         )
         response.raise_for_status()
         return response.json()["id"]

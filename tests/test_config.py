@@ -90,7 +90,7 @@ def test_load_config_with_ignore_rules():
 
 def test_load_config_unknown_agent_raises():
     path = _write_config(MINIMAL_CONFIG)
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError):
         load_config(path, "nonexistent")
 
 
@@ -106,5 +106,5 @@ def test_load_config_digests_without_source_feed_id_raises():
         },
     }
     path = _write_config(data)
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError):
         load_config(path, "bad")
