@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,13 +26,13 @@ def _config(source="raw_entries", source_feed_id=None):
 
 
 def test_generate_digest_title_daily():
-    title = generate_digest_title("tech-daily", datetime(2026, 4, 18, 14, 30))
-    assert title == "tech-daily Digest — 2026-04-18 14:30"
+    title = generate_digest_title("tech-daily", datetime(2026, 4, 18, tzinfo=timezone.utc))
+    assert title == "tech-daily Digest — 2026-04-18"
 
 
 def test_generate_digest_title_weekly():
-    title = generate_digest_title("tech-weekly", datetime(2026, 4, 18, 9, 5))
-    assert title == "tech-weekly Digest — 2026-04-18 09:05"
+    title = generate_digest_title("tech-weekly", datetime(2026, 4, 18, tzinfo=timezone.utc))
+    assert title == "tech-weekly Digest — 2026-04-18"
 
 
 def test_build_entries_text():
@@ -47,9 +47,6 @@ def test_build_entries_text():
     assert "Article 2" in text
 
 
-import pytest
-
-@pytest.mark.skip(reason="temporarily disabled for debugging")
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
 @patch("miniflux_summarizer.digest.MinifluxClient")
 def test_run_digest_raw_entries(mock_client_cls, mock_llm):
@@ -65,13 +62,11 @@ def test_run_digest_raw_entries(mock_client_cls, mock_llm):
 
     run_digest(config, since_timestamp)
 
-    mock_client.fetch_raw_entries.assert_called_once_with(published_after=since_timestamp)
+    mock_client.fetch_raw_entries.assert_called_once_with(published_after=since_timestamp, published_before=None)
     mock_llm.assert_called_once()
-    import_call = mock_client.import_entry.call_args
-    assert "<h1" in import_call[1]["content"]
+    mock_client.import_entry.assert_called_once()
 
 
-@pytest.mark.skip(reason="temporarily disabled for debugging")
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Newsletter")
 @patch("miniflux_summarizer.digest.MinifluxClient")
 def test_run_digest_digests_source(mock_client_cls, mock_llm):
@@ -87,9 +82,8 @@ def test_run_digest_digests_source(mock_client_cls, mock_llm):
 
     run_digest(config, since_timestamp)
 
-    mock_client.fetch_digest_entries.assert_called_once_with(feed_id=10, published_after=since_timestamp)
-    import_call = mock_client.import_entry.call_args
-    assert "<h1" in import_call[1]["content"]
+    mock_client.fetch_digest_entries.assert_called_once_with(feed_id=10, published_after=since_timestamp, published_before=None)
+    mock_client.import_entry.assert_called_once()
 
 
 @patch("miniflux_summarizer.digest.MinifluxClient")
