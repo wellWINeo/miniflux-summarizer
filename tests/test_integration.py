@@ -54,7 +54,7 @@ def test_full_pipeline_raw_entries():
         assert "/v1/feeds/42/entries/import" in call_args[0][0]
         body = call_args[1]["json"]
         assert "daily Digest" in body["title"]
-        assert body["external_id"].startswith("miniflux-summarizer:daily:")
+        assert body["external_id"].startswith("miniflux-summarizer:daily:default:")
         assert "<h2" in body["content"]
 
 

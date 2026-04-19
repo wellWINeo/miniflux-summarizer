@@ -77,14 +77,15 @@ def main():
 
     title = None
     if title_template is not None:
-        title = render_title(title_template, args.agent, datetime.now())
+        end_dt = datetime.fromtimestamp(until_timestamp, tz=timezone.utc) if until_timestamp else datetime.now(timezone.utc)
+        title = render_title(title_template, args.agent, end_dt)
 
     logger.info(
         "Running agent '%s' from %d to %s",
         args.agent, since_timestamp,
         until_timestamp if until_timestamp else "now",
     )
-    run_digest(config, since_timestamp, until_timestamp=until_timestamp, title=title)
+    run_digest(config, since_timestamp, until_timestamp=until_timestamp, title=title, preset_name=args.preset)
 
 
 if __name__ == "__main__":

@@ -155,3 +155,43 @@ def test_run_digest_uses_custom_title(mock_client_cls, mock_llm):
 
     import_call = mock_client.import_entry.call_args
     assert import_call.kwargs["title"] == "Custom Title"
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_run_digest_url_uses_end_date(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_raw_entries.return_value = [
+        {"title": "Article 1", "url": "https://example.com/1", "content": "<p>Content 1</p>", "feed": {"id": 1, "category": {"id": 10}}},
+    ]
+    mock_client.import_entry.return_value = 100
+
+    config = _config()
+    until_ts = 1745289600  # 2025-04-22 00:00:00 UTC
+
+    run_digest(config, 1000, until_timestamp=until_ts)
+
+    import_call = mock_client.import_entry.call_args
+    assert "/test-agent/default/2025-04-22" in import_call.kwargs["url"]
+    assert import_call.kwargs["external_id"] == "miniflux-summarizer:test-agent:default:2025-04-22"
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_run_digest_url_with_preset(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_raw_entries.return_value = [
+        {"title": "Article 1", "url": "https://example.com/1", "content": "<p>Content 1</p>", "feed": {"id": 1, "category": {"id": 10}}},
+    ]
+    mock_client.import_entry.return_value = 100
+
+    config = _config()
+    until_ts = 1745289600
+
+    run_digest(config, 1000, until_timestamp=until_ts, preset_name="morning")
+
+    import_call = mock_client.import_entry.call_args
+    assert "/test-agent/morning/2025-04-22" in import_call.kwargs["url"]
+    assert import_call.kwargs["external_id"] == "miniflux-summarizer:test-agent:morning:2025-04-22"
