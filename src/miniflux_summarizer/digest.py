@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
+import markdown
 from markdownify import markdownify as html_to_markdown
 
 from miniflux_summarizer.client import MinifluxClient
@@ -11,12 +12,12 @@ from miniflux_summarizer.llm import generate_summary
 logger = logging.getLogger(__name__)
 
 
-def _format_date(now: datetime) -> str:
-    return now.strftime("%Y-%m-%d")
+def _format_datetime(now: datetime) -> str:
+    return now.strftime("%Y-%m-%d-%H%M")
 
 
 def generate_digest_title(agent_name: str, now: datetime) -> str:
-    return f"{agent_name} Digest — {_format_date(now)}"
+    return f"{agent_name} Digest — {now.strftime('%Y-%m-%d %H:%M')}"
 
 
 def build_entries_text(entries: list[dict]) -> str:
@@ -30,7 +31,7 @@ def build_entries_text(entries: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def run_digest(config: Config, since_timestamp: int) -> None:
+def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None = None, title: str | None = None) -> None:
     client = MinifluxClient(
         base_url=config.miniflux_base_url,
         api_key=config.miniflux_api_key,
@@ -44,11 +45,12 @@ def run_digest(config: Config, since_timestamp: int) -> None:
         )
 
     if config.agent.source == "raw_entries":
-        entries = client.fetch_raw_entries(published_after=since_timestamp)
+        entries = client.fetch_raw_entries(published_after=since_timestamp, published_before=until_timestamp)
     else:
         entries = client.fetch_digest_entries(
             feed_id=config.agent.source_feed_id,
             published_after=since_timestamp,
+            published_before=until_timestamp,
         )
 
     filtered = [
@@ -71,17 +73,25 @@ def run_digest(config: Config, since_timestamp: int) -> None:
         entries_text=entries_text,
     )
 
-    now = datetime.now(timezone.utc)
-    date_str = _format_date(now)
-    title = generate_digest_title(config.agent_name, now)
-    external_id = f"miniflux-summarizer:{config.agent_name}:{date_str}"
-    url = f"{config.miniflux_base_url}/digest/{config.agent_name}/{date_str}"
+    html_content = markdown.markdown(summary, extensions=["extra", "toc"])
+
+    now = datetime.now()
+    dt_str = _format_datetime(now)
+    if title is None:
+        title = generate_digest_title(config.agent_name, now)
+    external_id = f"miniflux-summarizer:{config.agent_name}:{dt_str}"
+    url = f"{config.miniflux_base_url}/digest/{config.agent_name}/{dt_str}"
+
+    output_path = "output"
+    with open(output_path, "w") as f:
+        f.write(html_content)
+    logger.info("Wrote digest to %s", output_path)
 
     entry_id = client.import_entry(
         feed_id=config.agent.target_feed_id,
         title=title,
         url=url,
-        content=summary,
+        content=html_content,
         published_at=int(now.timestamp()),
         external_id=external_id,
     )
