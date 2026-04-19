@@ -31,6 +31,10 @@ def parse_time_value(value: str | None, reference_now: int) -> int:
         raise ValueError(f"Invalid time value: {value}. Use relative (-1d, -12h) or absolute (2025-04-19, 2025-04-19T08:00)")
 
 
+def render_title(template: str, agent_name: str, now: datetime) -> str:
+    return template.replace("{{date}}", now.strftime("%Y-%m-%d")).replace("{{agent_name}}", agent_name)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate digests from Miniflux entries")
     parser.add_argument("--config", required=True, help="Path to config JSON file")

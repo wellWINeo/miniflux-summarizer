@@ -46,6 +46,35 @@ def test_parse_time_value_invalid_raises():
         parse_time_value("invalid", NOW)
 
 
+def test_render_title_with_variables():
+    from datetime import datetime, timezone
+    from miniflux_summarizer.cli import render_title
+
+    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
+    assert render_title("Digest for {{date}}", "tech-daily", now) == "Digest for 2025-04-19"
+
+def test_render_title_with_agent_name():
+    from datetime import datetime, timezone
+    from miniflux_summarizer.cli import render_title
+
+    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
+    assert render_title("{{agent_name}} digest", "tech-daily", now) == "tech-daily digest"
+
+def test_render_title_no_variables():
+    from datetime import datetime, timezone
+    from miniflux_summarizer.cli import render_title
+
+    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
+    assert render_title("Static title", "tech-daily", now) == "Static title"
+
+def test_render_title_default_template():
+    from datetime import datetime, timezone
+    from miniflux_summarizer.cli import render_title
+
+    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
+    assert render_title("{{agent_name}} Digest — {{date}}", "tech-daily", now) == "tech-daily Digest — 2025-04-19"
+
+
 @patch("miniflux_summarizer.cli.run_digest")
 def test_cli_main_invokes_digest(mock_run):
     from miniflux_summarizer.cli import main
