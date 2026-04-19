@@ -39,21 +39,52 @@ def main():
     parser = argparse.ArgumentParser(description="Generate digests from Miniflux entries")
     parser.add_argument("--config", required=True, help="Path to config JSON file")
     parser.add_argument("--agent", required=True, help="Agent name from config")
-    parser.add_argument("--since", required=True, help="Time period (e.g. -1d, -7d, -1w, -1m)")
+    parser.add_argument("--from", dest="from_value", default=None, help="Start time: relative (-1d, -12h) or absolute (2025-04-19)")
+    parser.add_argument("--to", dest="to_value", default=None, help="End time (default: now)")
+    parser.add_argument("--title", default=None, help="Title template (e.g. 'Digest for {{date}}')")
+    parser.add_argument("--preset", default=None, help="Preset name from agent config")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    config = load_config(args.config, args.agent)
+    config = load_config(args.config, args.agent, preset_name=args.preset)
+
+    now = int(time.time())
+
+    from_value = args.from_value
+    to_value = args.to_value
+    title_template = args.title
+
+    if args.preset and args.preset in config.agent.presets:
+        preset = config.agent.presets[args.preset]
+        if title_template is None and preset.title is not None:
+            title_template = preset.title
+        if from_value is None and preset.from_value is not None:
+            from_value = preset.from_value
+        if to_value is None and preset.to_value is not None:
+            to_value = preset.to_value
+
+    if from_value is None:
+        print("Error: --from is required (or provide it via --preset)", file=sys.stderr)
+        sys.exit(1)
 
     try:
-        since_timestamp = parse_time_value(args.since, int(time.time()))
+        since_timestamp = parse_time_value(from_value, now)
+        until_timestamp = parse_time_value(to_value, now) if to_value else None
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    logger.info("Running agent '%s' with since %s (timestamp %d)", args.agent, args.since, since_timestamp)
-    run_digest(config, since_timestamp)
+    title = None
+    if title_template is not None:
+        title = render_title(title_template, args.agent, datetime.now())
+
+    logger.info(
+        "Running agent '%s' from %d to %s",
+        args.agent, since_timestamp,
+        until_timestamp if until_timestamp else "now",
+    )
+    run_digest(config, since_timestamp, until_timestamp=until_timestamp, title=title)
 
 
 if __name__ == "__main__":

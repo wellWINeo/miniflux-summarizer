@@ -95,7 +95,98 @@ def test_cli_main_invokes_digest(mock_run):
     json.dump(config_data, f)
     f.close()
 
-    with patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "test", "--since=-1d"]):
+    with patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "test", "--from=-1d"]):
+        main()
+
+    mock_run.assert_called_once()
+
+
+@patch("miniflux_summarizer.cli.run_digest")
+def test_cli_main_with_from_and_to(mock_run):
+    from miniflux_summarizer.cli import main
+
+    config_data = {
+        "miniflux": {"base_url": "https://r.example.com", "api_key": "k"},
+        "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
+        "agents": {
+            "test": {
+                "source": "raw_entries",
+                "target_feed_id": 1,
+                "prompt": "p",
+            }
+        },
+    }
+
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    json.dump(config_data, f)
+    f.close()
+
+    with patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "test", "--from=-1d", "--to=-12h"]):
+        main()
+
+    mock_run.assert_called_once()
+    call_kwargs = mock_run.call_args
+    assert call_kwargs[1].get("until_timestamp") is not None or (len(call_kwargs[0]) > 2 and call_kwargs[0][2] is not None)
+
+
+@patch("miniflux_summarizer.cli.run_digest")
+def test_cli_main_with_preset(mock_run):
+    from miniflux_summarizer.cli import main
+
+    config_data = {
+        "miniflux": {"base_url": "https://r.example.com", "api_key": "k"},
+        "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
+        "agents": {
+            "test": {
+                "source": "raw_entries",
+                "target_feed_id": 1,
+                "prompt": "p",
+                "presets": {
+                    "morning": {
+                        "title": "Morning digest for {{date}}",
+                        "from": "-12h",
+                    }
+                },
+            }
+        },
+    }
+
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    json.dump(config_data, f)
+    f.close()
+
+    with patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "test", "--preset", "morning"]):
+        main()
+
+    mock_run.assert_called_once()
+
+
+@patch("miniflux_summarizer.cli.run_digest")
+def test_cli_preset_cli_overrides(mock_run):
+    from miniflux_summarizer.cli import main
+
+    config_data = {
+        "miniflux": {"base_url": "https://r.example.com", "api_key": "k"},
+        "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
+        "agents": {
+            "test": {
+                "source": "raw_entries",
+                "target_feed_id": 1,
+                "prompt": "p",
+                "presets": {
+                    "morning": {
+                        "from": "-12h",
+                    }
+                },
+            }
+        },
+    }
+
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    json.dump(config_data, f)
+    f.close()
+
+    with patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "test", "--preset", "morning", "--from=-6h"]):
         main()
 
     mock_run.assert_called_once()
