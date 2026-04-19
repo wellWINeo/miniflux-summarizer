@@ -8,24 +8,29 @@ class MinifluxClient:
         self._api_key = api_key
         self._client = miniflux.Client(base_url, api_key=api_key)
 
-    def fetch_raw_entries(self, published_after: int) -> list[dict]:
-        result = self._client.get_entries(
+    def fetch_raw_entries(self, published_after: int, published_before: int | None = None) -> list[dict]:
+        kwargs = dict(
             status=["read", "unread"],
             published_after=published_after,
             order="published_at",
             direction="asc",
             limit=10000,
         )
+        if published_before is not None:
+            kwargs["published_before"] = published_before
+        result = self._client.get_entries(**kwargs)
         return result.get("entries", [])
 
-    def fetch_digest_entries(self, feed_id: int, published_after: int) -> list[dict]:
-        result = self._client.get_feed_entries(
-            feed_id,
+    def fetch_digest_entries(self, feed_id: int, published_after: int, published_before: int | None = None) -> list[dict]:
+        kwargs = dict(
             published_after=published_after,
             order="published_at",
             direction="asc",
             limit=10000,
         )
+        if published_before is not None:
+            kwargs["published_before"] = published_before
+        result = self._client.get_feed_entries(feed_id, **kwargs)
         return result.get("entries", [])
 
     def import_entry(

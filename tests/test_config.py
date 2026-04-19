@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from miniflux_summarizer.config import load_config
+from miniflux_summarizer.config import PresetConfig, load_config
 
 
 def _write_config(data: dict) -> Path:
@@ -108,3 +108,71 @@ def test_load_config_digests_without_source_feed_id_raises():
     path = _write_config(data)
     with pytest.raises(ValueError):
         load_config(path, "bad")
+
+
+def test_preset_config_defaults():
+    p = PresetConfig()
+    assert p.title is None
+    assert p.from_value is None
+    assert p.to_value is None
+
+
+def test_load_config_with_presets():
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "test-agent": {
+                **MINIMAL_CONFIG["agents"]["test-agent"],
+                "presets": {
+                    "morning": {
+                        "title": "Morning digest for {{date}}",
+                        "from": "-12h",
+                        "to": None,
+                    }
+                },
+            },
+        },
+    }
+    path = _write_config(data)
+    cfg = load_config(path, "test-agent")
+    assert "morning" in cfg.agent.presets
+    assert cfg.agent.presets["morning"].title == "Morning digest for {{date}}"
+    assert cfg.agent.presets["morning"].from_value == "-12h"
+    assert cfg.agent.presets["morning"].to_value is None
+
+
+def test_load_config_with_preset_name():
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "test-agent": {
+                **MINIMAL_CONFIG["agents"]["test-agent"],
+                "presets": {
+                    "morning": {
+                        "title": "Morning digest",
+                        "from": "-12h",
+                    }
+                },
+            },
+        },
+    }
+    path = _write_config(data)
+    cfg = load_config(path, "test-agent", preset_name="morning")
+    assert cfg.agent.presets["morning"].title == "Morning digest"
+
+
+def test_load_config_unknown_preset_raises():
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "test-agent": {
+                **MINIMAL_CONFIG["agents"]["test-agent"],
+                "presets": {
+                    "morning": {"from": "-12h"},
+                },
+            },
+        },
+    }
+    path = _write_config(data)
+    with pytest.raises(ValueError, match="preset"):
+        load_config(path, "test-agent", preset_name="nonexistent")

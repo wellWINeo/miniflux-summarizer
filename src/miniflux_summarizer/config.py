@@ -4,6 +4,13 @@ from pathlib import Path
 
 
 @dataclass
+class PresetConfig:
+    title: str | None = None
+    from_value: str | None = None
+    to_value: str | None = None
+
+
+@dataclass
 class AgentConfig:
     name: str
     source: str
@@ -11,6 +18,7 @@ class AgentConfig:
     prompt: str
     source_feed_id: int | None = None
     ignore: list[dict[str, str]] = field(default_factory=list)
+    presets: dict[str, PresetConfig] = field(default_factory=dict)
 
 
 @dataclass
@@ -44,7 +52,7 @@ class Config:
         return self.agent.ignore
 
 
-def load_config(config_path: Path, agent_name: str) -> Config:
+def load_config(config_path: Path, agent_name: str, preset_name: str | None = None) -> Config:
     raw = json.loads(Path(config_path).read_text())
 
     if agent_name not in raw.get("agents", {}):
@@ -55,6 +63,14 @@ def load_config(config_path: Path, agent_name: str) -> Config:
     if agent_raw["source"] == "digests" and "source_feed_id" not in agent_raw:
         raise ValueError(f"Error: agent '{agent_name}' with source 'digests' requires 'source_feed_id'")
 
+    presets = {}
+    for preset_key, preset_data in agent_raw.get("presets", {}).items():
+        presets[preset_key] = PresetConfig(
+            title=preset_data.get("title"),
+            from_value=preset_data.get("from"),
+            to_value=preset_data.get("to"),
+        )
+
     agent = AgentConfig(
         name=agent_name,
         source=agent_raw["source"],
@@ -62,7 +78,12 @@ def load_config(config_path: Path, agent_name: str) -> Config:
         prompt=agent_raw["prompt"],
         source_feed_id=agent_raw.get("source_feed_id"),
         ignore=agent_raw.get("ignore", []),
+        presets=presets,
     )
+
+    if preset_name is not None:
+        if preset_name not in agent.presets:
+            raise ValueError(f"Error: preset '{preset_name}' not found in agent '{agent_name}'")
 
     return Config(
         miniflux_base_url=raw["miniflux"]["base_url"],

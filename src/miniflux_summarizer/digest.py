@@ -30,7 +30,7 @@ def build_entries_text(entries: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def run_digest(config: Config, since_timestamp: int) -> None:
+def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None = None, title: str | None = None) -> None:
     client = MinifluxClient(
         base_url=config.miniflux_base_url,
         api_key=config.miniflux_api_key,
@@ -44,11 +44,12 @@ def run_digest(config: Config, since_timestamp: int) -> None:
         )
 
     if config.agent.source == "raw_entries":
-        entries = client.fetch_raw_entries(published_after=since_timestamp)
+        entries = client.fetch_raw_entries(published_after=since_timestamp, published_before=until_timestamp)
     else:
         entries = client.fetch_digest_entries(
             feed_id=config.agent.source_feed_id,
             published_after=since_timestamp,
+            published_before=until_timestamp,
         )
 
     filtered = [
@@ -73,7 +74,8 @@ def run_digest(config: Config, since_timestamp: int) -> None:
 
     now = datetime.now(timezone.utc)
     date_str = _format_date(now)
-    title = generate_digest_title(config.agent_name, now)
+    if title is None:
+        title = generate_digest_title(config.agent_name, now)
     external_id = f"miniflux-summarizer:{config.agent_name}:{date_str}"
     url = f"{config.miniflux_base_url}/digest/{config.agent_name}/{date_str}"
 

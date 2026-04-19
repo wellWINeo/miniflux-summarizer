@@ -26,7 +26,7 @@ def test_full_pipeline_raw_entries():
         patch("miniflux_summarizer.client.miniflux") as mock_mf,
         patch("miniflux_summarizer.digest.generate_summary", return_value="## Summary\nDone"),
         patch("miniflux_summarizer.client.httpx.post") as mock_post,
-        patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "daily", "--since=-1d"]),
+        patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "daily", "--from=-1d"]),
     ):
         mock_client = MagicMock()
         mock_mf.Client.return_value = mock_client
@@ -79,7 +79,7 @@ def test_full_pipeline_digests():
         patch("miniflux_summarizer.client.miniflux") as mock_mf,
         patch("miniflux_summarizer.digest.generate_summary", return_value="## Newsletter"),
         patch("miniflux_summarizer.client.httpx.post") as mock_post,
-        patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "weekly", "--since=-7d"]),
+        patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "weekly", "--from=-7d"]),
     ):
         mock_client = MagicMock()
         mock_mf.Client.return_value = mock_client
@@ -131,7 +131,7 @@ def test_full_pipeline_with_filtering():
         patch("miniflux_summarizer.client.miniflux") as mock_mf,
         patch("miniflux_summarizer.digest.generate_summary", return_value="Summary") as mock_llm,
         patch("miniflux_summarizer.client.httpx.post") as mock_post,
-        patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "daily", "--since=-1d"]),
+        patch("sys.argv", ["miniflux-summarizer", "--config", f.name, "--agent", "daily", "--from=-1d"]),
     ):
         mock_client = MagicMock()
         mock_mf.Client.return_value = mock_client

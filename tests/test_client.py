@@ -82,3 +82,29 @@ def test_import_entry(client):
         body = call_args[1]["json"]
         assert body["title"] == "Test Digest"
         assert body["external_id"] == "miniflux-summarizer:test:2026-04-18"
+
+
+def test_fetch_raw_entries_with_published_before(client, mock_miniflux):
+    mock_miniflux.get_entries.return_value = {"entries": []}
+    client.fetch_raw_entries(published_after=1000, published_before=2000)
+    mock_miniflux.get_entries.assert_called_once_with(
+        status=["read", "unread"],
+        published_after=1000,
+        published_before=2000,
+        order="published_at",
+        direction="asc",
+        limit=10000,
+    )
+
+
+def test_fetch_digest_entries_with_published_before(client, mock_miniflux):
+    mock_miniflux.get_feed_entries.return_value = {"entries": []}
+    client.fetch_digest_entries(feed_id=1, published_after=1000, published_before=2000)
+    mock_miniflux.get_feed_entries.assert_called_once_with(
+        1,
+        published_after=1000,
+        published_before=2000,
+        order="published_at",
+        direction="asc",
+        limit=10000,
+    )
