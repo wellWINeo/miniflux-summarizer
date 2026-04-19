@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
+import markdown
 from markdownify import markdownify as html_to_markdown
 
 from miniflux_summarizer.client import MinifluxClient
@@ -72,6 +73,8 @@ def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None
         entries_text=entries_text,
     )
 
+    html_content = markdown.markdown(summary, extensions=["extra", "toc"])
+
     now = datetime.now(timezone.utc)
     date_str = _format_date(now)
     if title is None:
@@ -83,7 +86,7 @@ def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None
         feed_id=config.agent.target_feed_id,
         title=title,
         url=url,
-        content=summary,
+        content=html_content,
         published_at=int(now.timestamp()),
         external_id=external_id,
     )

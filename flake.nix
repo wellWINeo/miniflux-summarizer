@@ -26,10 +26,11 @@
           ];
 
           dependencies = with pythonPkgs; [
+            markdown
+            markdownify
             miniflux
             httpx
             openai
-            markdownify
           ];
 
           nativeCheckInputs = with pythonPkgs; [
@@ -50,10 +51,11 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             (pythonPkgs.python.withPackages (ps: with ps; [
+              markdown
+              markdownify
               miniflux
               httpx
               openai
-              markdownify
               pytest
             ]))
           ];

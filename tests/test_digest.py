@@ -64,7 +64,8 @@ def test_run_digest_raw_entries(mock_client_cls, mock_llm):
 
     mock_client.fetch_raw_entries.assert_called_once_with(published_after=since_timestamp, published_before=None)
     mock_llm.assert_called_once()
-    mock_client.import_entry.assert_called_once()
+    import_call = mock_client.import_entry.call_args
+    assert "<h1" in import_call.kwargs["content"]
 
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Newsletter")
@@ -83,7 +84,8 @@ def test_run_digest_digests_source(mock_client_cls, mock_llm):
     run_digest(config, since_timestamp)
 
     mock_client.fetch_digest_entries.assert_called_once_with(feed_id=10, published_after=since_timestamp, published_before=None)
-    mock_client.import_entry.assert_called_once()
+    import_call = mock_client.import_entry.call_args
+    assert "<h1" in import_call.kwargs["content"]
 
 
 @patch("miniflux_summarizer.digest.MinifluxClient")

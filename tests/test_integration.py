@@ -55,6 +55,7 @@ def test_full_pipeline_raw_entries():
         body = call_args[1]["json"]
         assert "daily Digest" in body["title"]
         assert body["external_id"].startswith("miniflux-summarizer:daily:")
+        assert "<h2" in body["content"]
 
 
 def test_full_pipeline_digests():
@@ -105,6 +106,8 @@ def test_full_pipeline_digests():
         mock_client.get_feed_entries.assert_called_once()
         call_args = mock_post.call_args
         assert "/v1/feeds/43/entries/import" in call_args[0][0]
+        body = call_args[1]["json"]
+        assert "<h2" in body["content"]
 
 
 def test_full_pipeline_with_filtering():
