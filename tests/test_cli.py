@@ -4,30 +4,46 @@ from unittest.mock import patch
 
 import pytest
 
-from miniflux_summarizer.cli import parse_period
+from miniflux_summarizer.cli import parse_time_value
 
+NOW = 1745059200  # 2025-04-19 12:00:00 UTC
 
-def test_parse_period_days():
-    assert parse_period("-1d") == 86400
-    assert parse_period("-7d") == 7 * 86400
+def test_parse_time_value_relative_hours():
+    assert parse_time_value("-12h", NOW) == NOW - 12 * 3600
 
+def test_parse_time_value_relative_days():
+    assert parse_time_value("-1d", NOW) == NOW - 86400
 
-def test_parse_period_weeks():
-    assert parse_period("-1w") == 7 * 86400
-    assert parse_period("-2w") == 14 * 86400
+def test_parse_time_value_relative_weeks():
+    assert parse_time_value("-1w", NOW) == NOW - 7 * 86400
 
+def test_parse_time_value_relative_months():
+    assert parse_time_value("-1m", NOW) == NOW - 30 * 86400
 
-def test_parse_period_months():
-    assert parse_period("-1m") == 30 * 86400
+def test_parse_time_value_none_returns_now():
+    assert parse_time_value(None, NOW) == NOW
 
+def test_parse_time_value_absolute_iso():
+    from datetime import datetime, timezone
+    result = parse_time_value("2025-04-19T08:00:00", NOW)
+    expected = int(datetime(2025, 4, 19, 8, 0, 0, tzinfo=timezone.utc).timestamp())
+    assert result == expected
 
-def test_parse_period_hours():
-    assert parse_period("-1h") == 3600
+def test_parse_time_value_absolute_date_only():
+    from datetime import datetime, timezone
+    result = parse_time_value("2025-04-19", NOW)
+    expected = int(datetime(2025, 4, 19, 0, 0, 0, tzinfo=timezone.utc).timestamp())
+    assert result == expected
 
+def test_parse_time_value_absolute_flexible():
+    from datetime import datetime, timezone
+    result = parse_time_value("2025-04-19 08:00", NOW)
+    expected = int(datetime(2025, 4, 19, 8, 0, 0, tzinfo=timezone.utc).timestamp())
+    assert result == expected
 
-def test_parse_period_invalid():
+def test_parse_time_value_invalid_raises():
     with pytest.raises(ValueError):
-        parse_period("invalid")
+        parse_time_value("invalid", NOW)
 
 
 @patch("miniflux_summarizer.cli.run_digest")

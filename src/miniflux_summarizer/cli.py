@@ -3,6 +3,7 @@ import logging
 import re
 import sys
 import time
+from datetime import datetime, timezone
 
 from miniflux_summarizer.config import load_config
 from miniflux_summarizer.digest import run_digest
@@ -10,16 +11,24 @@ from miniflux_summarizer.digest import run_digest
 logger = logging.getLogger(__name__)
 
 
-def parse_period(period: str) -> int:
-    match = re.match(r"^-(\d+)([hdwm])$", period)
-    if not match:
-        raise ValueError(f"Invalid period format: {period}. Use -Nh, -Nd, -Nw, -Nm")
+def parse_time_value(value: str | None, reference_now: int) -> int:
+    if value is None:
+        return reference_now
 
-    value = int(match.group(1))
-    unit = match.group(2)
+    match = re.match(r"^-(\d+)([hdwm])$", value)
+    if match:
+        n = int(match.group(1))
+        unit = match.group(2)
+        multipliers = {"h": 3600, "d": 86400, "w": 7 * 86400, "m": 30 * 86400}
+        return reference_now - n * multipliers[unit]
 
-    multipliers = {"h": 3600, "d": 86400, "w": 7 * 86400, "m": 30 * 86400}
-    return value * multipliers[unit]
+    try:
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except (ValueError, OSError):
+        raise ValueError(f"Invalid time value: {value}. Use relative (-1d, -12h) or absolute (2025-04-19, 2025-04-19T08:00)")
 
 
 def main():
@@ -34,14 +43,12 @@ def main():
     config = load_config(args.config, args.agent)
 
     try:
-        period_seconds = parse_period(args.since)
+        since_timestamp = parse_time_value(args.since, int(time.time()))
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    since_timestamp = int(time.time()) - period_seconds
-
-    logger.info("Running agent '%s' with period %s (since %d)", args.agent, args.since, since_timestamp)
+    logger.info("Running agent '%s' with since %s (timestamp %d)", args.agent, args.since, since_timestamp)
     run_digest(config, since_timestamp)
 
 
