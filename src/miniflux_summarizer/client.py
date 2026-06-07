@@ -1,6 +1,8 @@
 import httpx
 import miniflux
 
+_BATCH_SIZE = 1000
+
 
 class MinifluxClient:
     def __init__(self, base_url: str, api_key: str):
@@ -14,24 +16,33 @@ class MinifluxClient:
             published_after=published_after,
             order="published_at",
             direction="asc",
-            limit=10000,
         )
         if published_before is not None:
             kwargs["published_before"] = published_before
-        result = self._client.get_entries(**kwargs)
-        return result.get("entries", [])
+        return self._fetch_paginated(self._client.get_entries, **kwargs)
 
     def fetch_digest_entries(self, feed_id: int, published_after: int, published_before: int | None = None) -> list[dict]:
         kwargs = dict(
             published_after=published_after,
             order="published_at",
             direction="asc",
-            limit=10000,
         )
         if published_before is not None:
             kwargs["published_before"] = published_before
-        result = self._client.get_feed_entries(feed_id, **kwargs)
-        return result.get("entries", [])
+        return self._fetch_paginated(self._client.get_feed_entries, feed_id, **kwargs)
+
+    def _fetch_paginated(self, api_fn, *args, **kwargs) -> list[dict]:
+        all_entries: list[dict] = []
+        offset = 0
+        while True:
+            result = api_fn(*args, **kwargs, limit=_BATCH_SIZE, offset=offset)
+            batch = result.get("entries", [])
+            all_entries.extend(batch)
+            total = result.get("total", 0)
+            offset += len(batch)
+            if offset >= total or not batch:
+                break
+        return all_entries
 
     def import_entry(
         self,

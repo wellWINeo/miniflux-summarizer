@@ -38,7 +38,8 @@ def test_fetch_raw_entries(client, mock_miniflux):
         published_after=1700000000,
         order="published_at",
         direction="asc",
-        limit=10000,
+        limit=1000,
+        offset=0,
     )
 
 
@@ -55,7 +56,8 @@ def test_fetch_digest_entries(client, mock_miniflux):
         published_after=1700000000,
         order="published_at",
         direction="asc",
-        limit=10000,
+        limit=1000,
+        offset=0,
     )
 
 
@@ -84,8 +86,68 @@ def test_import_entry(client):
         assert body["external_id"] == "miniflux-summarizer:test:2026-04-18"
 
 
+def test_fetch_raw_entries_paginates_when_total_exceeds_limit(client, mock_miniflux):
+    batch1 = [{"id": i, "title": f"Article {i}"} for i in range(1, 1001)]
+    batch2 = [{"id": i, "title": f"Article {i}"} for i in range(1001, 1051)]
+    mock_miniflux.get_entries.side_effect = [
+        {"total": 1050, "entries": batch1},
+        {"total": 1050, "entries": batch2},
+    ]
+
+    entries = client.fetch_raw_entries(published_after=1700000000)
+
+    assert len(entries) == 1050
+    assert mock_miniflux.get_entries.call_count == 2
+    mock_miniflux.get_entries.assert_any_call(
+        status=["read", "unread"],
+        published_after=1700000000,
+        order="published_at",
+        direction="asc",
+        limit=1000,
+        offset=0,
+    )
+    mock_miniflux.get_entries.assert_any_call(
+        status=["read", "unread"],
+        published_after=1700000000,
+        order="published_at",
+        direction="asc",
+        limit=1000,
+        offset=1000,
+    )
+
+
+def test_fetch_digest_entries_paginates_when_total_exceeds_limit(client, mock_miniflux):
+    batch1 = [{"id": i} for i in range(1, 1001)]
+    batch2 = [{"id": i} for i in range(1001, 1101)]
+    mock_miniflux.get_feed_entries.side_effect = [
+        {"total": 1100, "entries": batch1},
+        {"total": 1100, "entries": batch2},
+    ]
+
+    entries = client.fetch_digest_entries(feed_id=42, published_after=1700000000)
+
+    assert len(entries) == 1100
+    assert mock_miniflux.get_feed_entries.call_count == 2
+    mock_miniflux.get_feed_entries.assert_any_call(
+        42,
+        published_after=1700000000,
+        order="published_at",
+        direction="asc",
+        limit=1000,
+        offset=0,
+    )
+    mock_miniflux.get_feed_entries.assert_any_call(
+        42,
+        published_after=1700000000,
+        order="published_at",
+        direction="asc",
+        limit=1000,
+        offset=1000,
+    )
+
+
 def test_fetch_raw_entries_with_published_before(client, mock_miniflux):
-    mock_miniflux.get_entries.return_value = {"entries": []}
+    mock_miniflux.get_entries.return_value = {"total": 0, "entries": []}
     client.fetch_raw_entries(published_after=1000, published_before=2000)
     mock_miniflux.get_entries.assert_called_once_with(
         status=["read", "unread"],
@@ -93,12 +155,13 @@ def test_fetch_raw_entries_with_published_before(client, mock_miniflux):
         published_before=2000,
         order="published_at",
         direction="asc",
-        limit=10000,
+        limit=1000,
+        offset=0,
     )
 
 
 def test_fetch_digest_entries_with_published_before(client, mock_miniflux):
-    mock_miniflux.get_feed_entries.return_value = {"entries": []}
+    mock_miniflux.get_feed_entries.return_value = {"total": 0, "entries": []}
     client.fetch_digest_entries(feed_id=1, published_after=1000, published_before=2000)
     mock_miniflux.get_feed_entries.assert_called_once_with(
         1,
@@ -106,5 +169,6 @@ def test_fetch_digest_entries_with_published_before(client, mock_miniflux):
         published_before=2000,
         order="published_at",
         direction="asc",
-        limit=10000,
+        limit=1000,
+        offset=0,
     )
