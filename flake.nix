@@ -35,7 +35,14 @@
 
           nativeCheckInputs = with pythonPkgs; [
             pytestCheckHook
+            ruff
+            mypy
           ];
+
+          preCheck = ''
+            ruff check src/ tests/
+            mypy src/
+          '';
 
           meta = {
             description = "Generate LLM-powered digests and newsletters from Miniflux RSS entries";
@@ -49,16 +56,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            (pythonPkgs.python.withPackages (ps: with ps; [
-              markdown
-              markdownify
-              miniflux
-              httpx
-              openai
-              pytest
-            ]))
-          ];
+          packages = [ pkgs.uv ];
         };
       });
 }
