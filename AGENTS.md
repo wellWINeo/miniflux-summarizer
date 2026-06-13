@@ -2,17 +2,27 @@
 
 ## Commands
 
-All commands use the nix dev shell. No system Python required.
+All commands use uv inside the nix dev shell.
 
 ```bash
+# Enter dev shell (provides uv only, then sync deps)
+nix develop
+uv sync
+
 # Run all tests
-nix develop --command python -m pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run a single test file
-nix develop --command python -m pytest tests/test_filter.py -v
+uv run pytest tests/test_filter.py -v
 
 # Run a single test
-nix develop --command python -m pytest tests/test_cli.py::test_parse_period_days -v
+uv run pytest tests/test_cli.py::test_parse_period_days -v
+
+# Lint
+uv run ruff check src/ tests/
+
+# Type check
+uv run mypy src/
 
 # Build the package
 nix build
@@ -23,8 +33,6 @@ nix run . -- --config config.json --agent tech-daily --since=-1d
 # Enter dev shell
 nix develop
 ```
-
-There is no separate lint or typecheck step. Tests are the verification gate.
 
 ## Architecture
 
