@@ -1,5 +1,6 @@
 import json
 import tempfile
+from datetime import UTC
 from unittest.mock import patch
 
 import pytest
@@ -24,21 +25,21 @@ def test_parse_time_value_none_returns_now():
     assert parse_time_value(None, NOW) == NOW
 
 def test_parse_time_value_absolute_iso():
-    from datetime import datetime, timezone
+    from datetime import datetime
     result = parse_time_value("2025-04-19T08:00:00", NOW)
-    expected = int(datetime(2025, 4, 19, 8, 0, 0, tzinfo=timezone.utc).timestamp())
+    expected = int(datetime(2025, 4, 19, 8, 0, 0, tzinfo=UTC).timestamp())
     assert result == expected
 
 def test_parse_time_value_absolute_date_only():
-    from datetime import datetime, timezone
+    from datetime import datetime
     result = parse_time_value("2025-04-19", NOW)
-    expected = int(datetime(2025, 4, 19, 0, 0, 0, tzinfo=timezone.utc).timestamp())
+    expected = int(datetime(2025, 4, 19, 0, 0, 0, tzinfo=UTC).timestamp())
     assert result == expected
 
 def test_parse_time_value_absolute_flexible():
-    from datetime import datetime, timezone
+    from datetime import datetime
     result = parse_time_value("2025-04-19 08:00", NOW)
-    expected = int(datetime(2025, 4, 19, 8, 0, 0, tzinfo=timezone.utc).timestamp())
+    expected = int(datetime(2025, 4, 19, 8, 0, 0, tzinfo=UTC).timestamp())
     assert result == expected
 
 def test_parse_time_value_invalid_raises():
@@ -47,31 +48,35 @@ def test_parse_time_value_invalid_raises():
 
 
 def test_render_title_with_variables():
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from miniflux_summarizer.cli import render_title
 
-    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=UTC)
     assert render_title("Digest for {{date}}", "tech-daily", now) == "Digest for 2025-04-19"
 
 def test_render_title_with_agent_name():
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from miniflux_summarizer.cli import render_title
 
-    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=UTC)
     assert render_title("{{agent_name}} digest", "tech-daily", now) == "tech-daily digest"
 
 def test_render_title_no_variables():
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from miniflux_summarizer.cli import render_title
 
-    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=UTC)
     assert render_title("Static title", "tech-daily", now) == "Static title"
 
 def test_render_title_default_template():
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from miniflux_summarizer.cli import render_title
 
-    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2025, 4, 19, 12, 0, 0, tzinfo=UTC)
     assert render_title("{{agent_name}} Digest — {{date}}", "tech-daily", now) == "tech-daily Digest — 2025-04-19"
 
 

@@ -1,7 +1,8 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
-import markdown
+import markdown  # type: ignore[import-untyped]
 from markdownify import markdownify as html_to_markdown
 
 from miniflux_summarizer.client import MinifluxClient
@@ -20,7 +21,7 @@ def generate_digest_title(agent_name: str, now: datetime) -> str:
     return f"{agent_name} Digest — {_format_date(now)}"
 
 
-def build_entries_text(entries: list[dict]) -> str:
+def build_entries_text(entries: list[dict[str, Any]]) -> str:
     parts = []
     for entry in entries:
         title = entry.get("title", "Untitled")
@@ -31,7 +32,13 @@ def build_entries_text(entries: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None = None, title: str | None = None, preset_name: str | None = None) -> None:
+def run_digest(
+    config: Config,
+    since_timestamp: int,
+    until_timestamp: int | None = None,
+    title: str | None = None,
+    preset_name: str | None = None,
+) -> None:
     client = MinifluxClient(
         base_url=config.miniflux_base_url,
         api_key=config.miniflux_api_key,
@@ -45,10 +52,17 @@ def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None
         )
 
     if config.agent.source == "raw_entries":
-        entries = client.fetch_raw_entries(published_after=since_timestamp, published_before=until_timestamp)
+        entries = client.fetch_raw_entries(
+            published_after=since_timestamp, published_before=until_timestamp
+        )
     else:
+        source_feed_id = config.agent.source_feed_id
+        if source_feed_id is None:
+            raise ValueError(
+                f"Agent '{config.agent_name}' with source 'digests' requires 'source_feed_id'"
+            )
         entries = client.fetch_digest_entries(
-            feed_id=config.agent.source_feed_id,
+            feed_id=source_feed_id,
             published_after=since_timestamp,
             published_before=until_timestamp,
         )
@@ -75,8 +89,8 @@ def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None
 
     html_content = markdown.markdown(summary, extensions=["extra", "toc"])
 
-    now = datetime.now(timezone.utc)
-    end_dt = datetime.fromtimestamp(until_timestamp, tz=timezone.utc) if until_timestamp else now
+    now = datetime.now(UTC)
+    end_dt = datetime.fromtimestamp(until_timestamp, tz=UTC) if until_timestamp else now
     date_str = _format_date(end_dt)
     preset_slug = preset_name or "default"
     if title is None:

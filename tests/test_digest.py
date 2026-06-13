@@ -1,7 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from miniflux_summarizer.config import AgentConfig, Config
 from miniflux_summarizer.digest import build_entries_text, generate_digest_title, run_digest
@@ -26,12 +24,12 @@ def _config(source="raw_entries", source_feed_id=None):
 
 
 def test_generate_digest_title_daily():
-    title = generate_digest_title("tech-daily", datetime(2026, 4, 18, tzinfo=timezone.utc))
+    title = generate_digest_title("tech-daily", datetime(2026, 4, 18, tzinfo=UTC))
     assert title == "tech-daily Digest — 2026-04-18"
 
 
 def test_generate_digest_title_weekly():
-    title = generate_digest_title("tech-weekly", datetime(2026, 4, 18, tzinfo=timezone.utc))
+    title = generate_digest_title("tech-weekly", datetime(2026, 4, 18, tzinfo=UTC))
     assert title == "tech-weekly Digest — 2026-04-18"
 
 

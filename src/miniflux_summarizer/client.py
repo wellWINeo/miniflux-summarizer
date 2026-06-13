@@ -1,5 +1,8 @@
+from collections.abc import Callable
+from typing import Any
+
 import httpx
-import miniflux
+import miniflux  # type: ignore[import-untyped]
 
 _BATCH_SIZE = 1000
 
@@ -10,7 +13,9 @@ class MinifluxClient:
         self._api_key = api_key
         self._client = miniflux.Client(base_url, api_key=api_key)
 
-    def fetch_raw_entries(self, published_after: int, published_before: int | None = None) -> list[dict]:
+    def fetch_raw_entries(
+        self, published_after: int, published_before: int | None = None
+    ) -> list[dict[str, Any]]:
         kwargs = dict(
             status=["read", "unread"],
             published_after=published_after,
@@ -21,7 +26,12 @@ class MinifluxClient:
             kwargs["published_before"] = published_before
         return self._fetch_paginated(self._client.get_entries, **kwargs)
 
-    def fetch_digest_entries(self, feed_id: int, published_after: int, published_before: int | None = None) -> list[dict]:
+    def fetch_digest_entries(
+        self,
+        feed_id: int,
+        published_after: int,
+        published_before: int | None = None,
+    ) -> list[dict[str, Any]]:
         kwargs = dict(
             published_after=published_after,
             order="published_at",
@@ -31,8 +41,13 @@ class MinifluxClient:
             kwargs["published_before"] = published_before
         return self._fetch_paginated(self._client.get_feed_entries, feed_id, **kwargs)
 
-    def _fetch_paginated(self, api_fn, *args, **kwargs) -> list[dict]:
-        all_entries: list[dict] = []
+    def _fetch_paginated(
+        self,
+        api_fn: Callable[..., dict[str, Any]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        all_entries: list[dict[str, Any]] = []
         offset = 0
         while True:
             result = api_fn(*args, **kwargs, limit=_BATCH_SIZE, offset=offset)
@@ -67,4 +82,8 @@ class MinifluxClient:
             timeout=60.0,
         )
         response.raise_for_status()
-        return response.json()["id"]
+        result = response.json()
+        entry_id = result.get("id")
+        if entry_id is None:
+            raise ValueError(f"Invalid response from Miniflux: {result}")
+        return int(entry_id)

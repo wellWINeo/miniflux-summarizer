@@ -1,7 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from miniflux_summarizer.llm import generate_summary
 
 

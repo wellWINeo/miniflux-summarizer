@@ -15,10 +15,7 @@ dependencies = [
     "openai>=1.30.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-]
+
 
 [project.scripts]
 miniflux-summarizer = "miniflux_summarizer.cli:main"
@@ -28,3 +25,23 @@ pythonpath = ["src"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff",
+    "mypy",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+per-file-ignores = {"tests/test_cli.py" = ["E501"], "tests/test_digest.py" = ["E501"]}
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src"]
