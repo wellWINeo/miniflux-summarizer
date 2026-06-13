@@ -1,5 +1,9 @@
 from openai import APIError, OpenAI
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from openai.types.chat import ChatCompletion
 
 def generate_summary(
     base_url: str,
@@ -11,7 +15,7 @@ def generate_summary(
     client = OpenAI(base_url=base_url, api_key=api_key, timeout=60.0)
 
     try:
-        response = client.chat.completions.create(
+        response: ChatCompletion = client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -24,4 +28,7 @@ def generate_summary(
     if not response.choices:
         raise RuntimeError("LLM returned no choices")
 
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if content is None:
+        raise RuntimeError("LLM returned no content")
+    return content

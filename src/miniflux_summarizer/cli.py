@@ -38,7 +38,7 @@ def render_title(template: str, agent_name: str, now: datetime) -> str:
     return template.replace("{{date}}", now.strftime("%Y-%m-%d")).replace("{{agent_name}}", agent_name)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Generate digests from Miniflux entries")
     parser.add_argument("--config", required=True, help="Path to config JSON file")
     parser.add_argument("--agent", required=True, help="Agent name from config")

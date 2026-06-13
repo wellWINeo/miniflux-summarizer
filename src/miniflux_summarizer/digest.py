@@ -1,7 +1,8 @@
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
-import markdown
+import markdown  # type: ignore[import-untyped]
 from markdownify import markdownify as html_to_markdown
 
 from miniflux_summarizer.client import MinifluxClient
@@ -20,7 +21,7 @@ def generate_digest_title(agent_name: str, now: datetime) -> str:
     return f"{agent_name} Digest — {_format_date(now)}"
 
 
-def build_entries_text(entries: list[dict]) -> str:
+def build_entries_text(entries: list[dict[str, Any]]) -> str:
     parts = []
     for entry in entries:
         title = entry.get("title", "Untitled")
@@ -51,10 +52,17 @@ def run_digest(
         )
 
     if config.agent.source == "raw_entries":
-        entries = client.fetch_raw_entries(published_after=since_timestamp, published_before=until_timestamp)
+        entries = client.fetch_raw_entries(
+            published_after=since_timestamp, published_before=until_timestamp
+        )
     else:
+        source_feed_id = config.agent.source_feed_id
+        if source_feed_id is None:
+            raise ValueError(
+                f"Agent '{config.agent_name}' with source 'digests' requires 'source_feed_id'"
+            )
         entries = client.fetch_digest_entries(
-            feed_id=config.agent.source_feed_id,
+            feed_id=source_feed_id,
             published_after=since_timestamp,
             published_before=until_timestamp,
         )
