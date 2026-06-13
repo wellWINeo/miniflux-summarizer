@@ -3,7 +3,7 @@ import logging
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from miniflux_summarizer.config import load_config
 from miniflux_summarizer.digest import run_digest
@@ -25,10 +25,13 @@ def parse_time_value(value: str | None, reference_now: int) -> int:
     try:
         dt = datetime.fromisoformat(value)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return int(dt.timestamp())
-    except (ValueError, OSError):
-        raise ValueError(f"Invalid time value: {value}. Use relative (-1d, -12h) or absolute (2025-04-19, 2025-04-19T08:00)")
+    except (ValueError, OSError) as err:
+        raise ValueError(
+            f"Invalid time value: {value}. Use relative (-1d, -12h) "
+            f"or absolute (2025-04-19, 2025-04-19T08:00)"
+        ) from err
 
 
 def render_title(template: str, agent_name: str, now: datetime) -> str:
@@ -39,7 +42,12 @@ def main():
     parser = argparse.ArgumentParser(description="Generate digests from Miniflux entries")
     parser.add_argument("--config", required=True, help="Path to config JSON file")
     parser.add_argument("--agent", required=True, help="Agent name from config")
-    parser.add_argument("--from", dest="from_value", default=None, help="Start time: relative (-1d, -12h) or absolute (2025-04-19)")
+    parser.add_argument(
+        "--from",
+        dest="from_value",
+        default=None,
+        help="Start time: relative (-1d, -12h) or absolute (2025-04-19)",
+    )
     parser.add_argument("--to", dest="to_value", default=None, help="End time (default: now)")
     parser.add_argument("--title", default=None, help="Title template (e.g. 'Digest for {{date}}')")
     parser.add_argument("--preset", default=None, help="Preset name from agent config")
@@ -77,7 +85,7 @@ def main():
 
     title = None
     if title_template is not None:
-        end_dt = datetime.fromtimestamp(until_timestamp, tz=timezone.utc) if until_timestamp else datetime.now(timezone.utc)
+        end_dt = datetime.fromtimestamp(until_timestamp, tz=UTC) if until_timestamp else datetime.now(UTC)
         title = render_title(title_template, args.agent, end_dt)
 
     logger.info(

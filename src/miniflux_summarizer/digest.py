@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import markdown
 from markdownify import markdownify as html_to_markdown
@@ -31,7 +31,13 @@ def build_entries_text(entries: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None = None, title: str | None = None, preset_name: str | None = None) -> None:
+def run_digest(
+    config: Config,
+    since_timestamp: int,
+    until_timestamp: int | None = None,
+    title: str | None = None,
+    preset_name: str | None = None,
+) -> None:
     client = MinifluxClient(
         base_url=config.miniflux_base_url,
         api_key=config.miniflux_api_key,
@@ -75,8 +81,8 @@ def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None
 
     html_content = markdown.markdown(summary, extensions=["extra", "toc"])
 
-    now = datetime.now(timezone.utc)
-    end_dt = datetime.fromtimestamp(until_timestamp, tz=timezone.utc) if until_timestamp else now
+    now = datetime.now(UTC)
+    end_dt = datetime.fromtimestamp(until_timestamp, tz=UTC) if until_timestamp else now
     date_str = _format_date(end_dt)
     preset_slug = preset_name or "default"
     if title is None:

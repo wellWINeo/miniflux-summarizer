@@ -39,6 +39,7 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
+per-file-ignores = {"tests/test_cli.py" = ["E501"], "tests/test_digest.py" = ["E501"]}
 
 [tool.mypy]
 python_version = "3.12"

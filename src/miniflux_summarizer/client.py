@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from typing import Any
+
 import httpx
 import miniflux
 
@@ -21,7 +24,12 @@ class MinifluxClient:
             kwargs["published_before"] = published_before
         return self._fetch_paginated(self._client.get_entries, **kwargs)
 
-    def fetch_digest_entries(self, feed_id: int, published_after: int, published_before: int | None = None) -> list[dict]:
+    def fetch_digest_entries(
+        self,
+        feed_id: int,
+        published_after: int,
+        published_before: int | None = None,
+    ) -> list[dict]:
         kwargs = dict(
             published_after=published_after,
             order="published_at",
@@ -31,7 +39,12 @@ class MinifluxClient:
             kwargs["published_before"] = published_before
         return self._fetch_paginated(self._client.get_feed_entries, feed_id, **kwargs)
 
-    def _fetch_paginated(self, api_fn, *args, **kwargs) -> list[dict]:
+    def _fetch_paginated(
+        self,
+        api_fn: Callable[..., dict[str, Any]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> list[dict]:
         all_entries: list[dict] = []
         offset = 0
         while True:
