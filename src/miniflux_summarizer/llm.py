@@ -1,6 +1,6 @@
-from openai import APIError, OpenAI
-
 from typing import TYPE_CHECKING
+
+from openai import APIError, OpenAI
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletion

@@ -1,5 +1,6 @@
 from typing import Any
 
+
 def should_ignore(entry: dict[str, Any], rules: list[dict[str, str]]) -> bool:
     for rule in rules:
         rule_type = rule["type"]
