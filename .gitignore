@@ -9,3 +9,5 @@ build/
 .env
 result
 config.example.json
+.DS_store
+.direnv
