@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,6 +18,7 @@ class AgentConfig:
     target_feed_id: int
     prompt: str
     source_feed_id: int | None = None
+    history_lookback: int | None = None
     ignore: list[dict[str, str]] = field(default_factory=list)
     presets: dict[str, PresetConfig] = field(default_factory=dict)
 
@@ -30,6 +32,7 @@ class Config:
     llm_api_key: str
     agent_name: str
     agent: AgentConfig
+    digest_feed_ids: set[int]
 
     @property
     def source(self) -> str:
@@ -52,6 +55,22 @@ class Config:
         return self.agent.ignore
 
 
+def parse_history_lookback(value: str) -> int:
+    if not isinstance(value, str):
+        raise ValueError("history_lookback must be a relative duration such as '-7d'")
+
+    match = re.fullmatch(r"-(\d+)([hdwm])", value)
+    if match is None:
+        raise ValueError("history_lookback must be a relative duration such as '-7d'")
+
+    amount = int(match.group(1))
+    if amount == 0:
+        raise ValueError("history_lookback must be greater than zero")
+
+    multipliers = {"h": 3600, "d": 86400, "w": 7 * 86400, "m": 30 * 86400}
+    return amount * multipliers[match.group(2)]
+
+
 def load_config(config_path: Path, agent_name: str, preset_name: str | None = None) -> Config:
     raw = json.loads(Path(config_path).read_text())
 
@@ -62,6 +81,13 @@ def load_config(config_path: Path, agent_name: str, preset_name: str | None = No
 
     if agent_raw["source"] == "digests" and "source_feed_id" not in agent_raw:
         raise ValueError(f"Error: agent '{agent_name}' with source 'digests' requires 'source_feed_id'")
+
+    history_lookback_raw = agent_raw.get("history_lookback")
+    history_lookback = (
+        parse_history_lookback(history_lookback_raw)
+        if history_lookback_raw is not None
+        else None
+    )
 
     presets = {}
     for preset_key, preset_data in agent_raw.get("presets", {}).items():
@@ -77,9 +103,15 @@ def load_config(config_path: Path, agent_name: str, preset_name: str | None = No
         target_feed_id=agent_raw["target_feed_id"],
         prompt=agent_raw["prompt"],
         source_feed_id=agent_raw.get("source_feed_id"),
+        history_lookback=history_lookback,
         ignore=agent_raw.get("ignore", []),
         presets=presets,
     )
+
+    digest_feed_ids = {
+        int(agent_data["target_feed_id"])
+        for agent_data in raw.get("agents", {}).values()
+    }
 
     if preset_name is not None:
         if preset_name not in agent.presets:
@@ -93,4 +125,5 @@ def load_config(config_path: Path, agent_name: str, preset_name: str | None = No
         llm_api_key=raw["llm"]["api_key"],
         agent_name=agent_name,
         agent=agent,
+        digest_feed_ids=digest_feed_ids,
     )

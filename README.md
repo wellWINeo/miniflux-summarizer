@@ -61,6 +61,7 @@ miniflux-summarizer --config config.json --agent tech-monthly --since=-1m
     "tech-daily": {
       "source": "raw_entries",
       "target_feed_id": 42,
+      "history_lookback": "-7d",
       "prompt": "Summarize these articles into a concise digest...",
       "ignore": [
         { "type": "subject", "value": "Sponsored" },
@@ -85,6 +86,12 @@ miniflux-summarizer --config config.json --agent tech-monthly --since=-1m
 |--------|-------------|
 | `raw_entries` | Fetches entries from all feeds, summarizes them into one digest |
 | `digests` | Reads existing digest entries from `source_feed_id`, accumulates into a newsletter |
+
+For `raw_entries` agents, every configured agent `target_feed_id` is excluded from the current run so generated digests do not re-enter the live news stream. The tool then fetches the preceding history window from each unique digest feed and passes it to the LLM as labeled context. `history_lookback` is optional and defaults to the current run scope. Historical entries are context only: the model should include a historical topic only when current-period articles contain a new fact, event, development, or meaningful change. `digests` agents retain their existing explicit `source_feed_id` behavior and do not use this raw-entry history flow.
+
+| Field | Description |
+|-------|-------------|
+| `history_lookback` | Optional relative history window for raw-entry context, such as `-7d` |
 
 ### Ignore rules
 

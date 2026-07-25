@@ -14,6 +14,19 @@ def test_full_pipeline_raw_entries():
                 "source": "raw_entries",
                 "target_feed_id": 42,
                 "prompt": "Summarize",
+                "history_lookback": "-1d",
+            },
+            "weekly": {
+                "source": "digests",
+                "source_feed_id": 42,
+                "target_feed_id": 43,
+                "prompt": "Weekly",
+            },
+            "monthly": {
+                "source": "digests",
+                "source_feed_id": 43,
+                "target_feed_id": 42,
+                "prompt": "Monthly",
             }
         },
     }
@@ -39,8 +52,26 @@ def test_full_pipeline_raw_entries():
                     "content": "<p>Content</p>",
                     "feed": {"id": 1, "category": {"id": 10}},
                 },
+                {
+                    "id": 2,
+                    "title": "Daily Digest",
+                    "url": "https://example.com/daily",
+                    "content": "<p>Digest content</p>",
+                    "feed": {"id": 42, "category": {"id": 1}},
+                },
+                {
+                    "id": 3,
+                    "title": "Weekly Digest",
+                    "url": "https://example.com/weekly",
+                    "content": "<p>Digest content</p>",
+                    "feed": {"id": 43, "category": {"id": 1}},
+                },
             ],
         }
+        mock_client.get_feed_entries.side_effect = [
+            {"entries": []},
+            {"entries": []},
+        ]
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"id": 100}
@@ -56,6 +87,10 @@ def test_full_pipeline_raw_entries():
         assert "daily Digest" in body["title"]
         assert body["external_id"].startswith("miniflux-summarizer:daily:default:")
         assert "<h2" in body["content"]
+        assert "Daily Digest" not in body["content"]
+        assert "Weekly Digest" not in body["content"]
+
+        assert mock_client.get_feed_entries.call_count == 2
 
 
 def test_full_pipeline_digests():
@@ -94,6 +129,7 @@ def test_full_pipeline_digests():
                     "feed": {"id": 42, "category": {"id": 1}},
                 },
             ],
+            "total": 1,
         }
 
         mock_response = MagicMock()
@@ -155,6 +191,10 @@ def test_full_pipeline_with_filtering():
                     "feed": {"id": 1, "category": {"id": 10}},
                 },
             ],
+        }
+        mock_client.get_feed_entries.return_value = {
+            "entries": [],
+            "total": 0,
         }
 
         mock_response = MagicMock()
