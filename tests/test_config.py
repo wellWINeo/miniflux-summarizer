@@ -68,6 +68,92 @@ def test_load_config_with_digests_source():
     assert cfg.target_feed_id == 20
 
 
+def test_load_config_parses_history_lookback_and_unique_digest_feeds():
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "daily": {
+                "source": "raw_entries",
+                "target_feed_id": 42,
+                "history_lookback": "-7d",
+                "prompt": "Daily",
+            },
+            "weekly": {
+                "source": "digests",
+                "source_feed_id": 42,
+                "target_feed_id": 43,
+                "prompt": "Weekly",
+            },
+            "monthly": {
+                "source": "digests",
+                "source_feed_id": 42,
+                "target_feed_id": 42,
+                "prompt": "Monthly",
+            },
+        },
+    }
+
+    path = _write_config(data)
+    cfg = load_config(path, "daily")
+
+    assert cfg.agent.history_lookback == 7 * 86400
+    assert cfg.digest_feed_ids == {42, 43}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_seconds"),
+    [
+        ("-2h", 2 * 3600),
+        ("-3d", 3 * 86400),
+        ("-2w", 2 * 7 * 86400),
+        ("-2m", 2 * 30 * 86400),
+    ],
+)
+def test_load_config_parses_all_history_lookback_units(value, expected_seconds):
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "test-agent": {
+                **MINIMAL_CONFIG["agents"]["test-agent"],
+                "history_lookback": value,
+            },
+        },
+    }
+
+    path = _write_config(data)
+
+    cfg = load_config(path, "test-agent")
+
+    assert cfg.agent.history_lookback == expected_seconds
+
+
+@pytest.mark.parametrize("value", ["7d", "-0d", "-7x", "-7", "invalid", 7])
+def test_load_config_rejects_invalid_history_lookback(value):
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "test-agent": {
+                **MINIMAL_CONFIG["agents"]["test-agent"],
+                "history_lookback": value,
+            },
+        },
+    }
+
+    path = _write_config(data)
+
+    with pytest.raises(ValueError, match="history_lookback"):
+        load_config(path, "test-agent")
+
+
+def test_load_config_defaults_history_lookback_to_none():
+    path = _write_config(MINIMAL_CONFIG)
+
+    cfg = load_config(path, "test-agent")
+
+    assert cfg.agent.history_lookback is None
+    assert cfg.digest_feed_ids == {42}
+
+
 def test_load_config_with_ignore_rules():
     data = {
         **MINIMAL_CONFIG,
