@@ -74,7 +74,7 @@ After:
 ```json
 {
   "bloomberg-daily": {
-    "sources": [{ "kind": "category", "id": 17 }],
+    "sources": [{ "kind": "category", "id": 4 }],
     "target_feed_id": 42,
     "prompt": "Summarize the latest Bloomberg business and markets coverage",
     "ignore": [{ "type": "generated_digests" }]
@@ -82,11 +82,11 @@ After:
 }
 ```
 
-Replace `17` and `42` with the Miniflux category and output-feed IDs in the
-local installation. The value-less `generated_digests` rule derives all
-target-feed IDs from the full agent configuration and applies only to entries
-returned by `all` or `category` sources. A selected `feed` source is not
-silently filtered by that rule.
+Replace `42` with the Miniflux output-feed ID in the local installation. The
+value-less `generated_digests` rule derives all target-feed IDs from the full
+agent configuration and applies only to entries returned by `all` or
+`category` sources. A selected `feed` source is not silently filtered by that
+rule.
 
 Agents with a raw source continue to receive the existing historical digest
 context. Feed-only agents continue to receive their selected feed entries
