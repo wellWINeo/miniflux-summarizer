@@ -26,6 +26,22 @@ class MinifluxClient:
             kwargs["published_before"] = published_before
         return self._fetch_paginated(self._client.get_entries, **kwargs)
 
+    def fetch_category_entries(
+        self,
+        category_id: int,
+        published_after: int,
+        published_before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        kwargs = dict(
+            status=["read", "unread"],
+            published_after=published_after,
+            order="published_at",
+            direction="asc",
+        )
+        if published_before is not None:
+            kwargs["published_before"] = published_before
+        return self._fetch_paginated(self._client.get_category_entries, category_id, **kwargs)
+
     def fetch_digest_entries(
         self,
         feed_id: int,

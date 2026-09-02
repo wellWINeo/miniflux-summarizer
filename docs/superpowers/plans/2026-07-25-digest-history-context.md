@@ -2,19 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prevent generated digests from re-entering current raw-news input while giving raw-entry agents configurable historical digest context for meaningful story updates.
+**Goal:** Prevent generated digests from re-entering current category-source input while giving category sources configurable historical digest context for meaningful story updates.
 
-**Architecture:** Load a deduplicated set of every configured agent's target feed IDs into `Config`. Raw-entry runs exclude all those feeds from current entries, then independently fetch the preceding history window from each unique digest feed and pass it to the LLM in a labeled context section. Digest-source agents retain their existing explicit `source_feed_id` flow.
+**Architecture:** Load a deduplicated set of every configured agent's target feed IDs into `Config`. Runs with raw entries independently fetch the preceding history window from each unique digest feed and pass it to the LLM in a labeled context section. `generated_digests` explicitly excludes those feeds from raw batches; feed-only agents retain their feed-source flow.
 
 **Tech Stack:** Python 3.12, pytest, Miniflux Python client, OpenAI-compatible LLM client, Markdown/Markdownify, Ruff, mypy, Nix.
 
 ## Global Constraints
 
-- Generated digest entries must never be treated as current raw news.
+- When `generated_digests` is configured, generated digest entries must not be treated as current raw news.
 - All configured `target_feed_id` values must be deduplicated with a `set[int]`.
 - `history_lookback` accepts `-Nh`, `-Nd`, `-Nw`, or `-Nm` and defaults to the current run scope.
 - Historical context must end at the current period start and must not create a digest by itself.
-- `source: "digests"` behavior remains unchanged.
+- Feed-only source behavior remains unchanged.
 - Historical-feed fetch failures fail the run; an empty history result is valid.
 - Do not add dependencies or persistent state.
 - Use the existing project commands through `uv` inside the Nix development environment.
@@ -54,20 +54,18 @@ def test_load_config_parses_history_lookback_and_unique_digest_feeds():
         **MINIMAL_CONFIG,
         "agents": {
             "daily": {
-                "source": "raw_entries",
+                "sources": [{ "kind": "category", "id": 10 }],
                 "target_feed_id": 42,
                 "history_lookback": "-7d",
                 "prompt": "Daily",
             },
             "weekly": {
-                "source": "digests",
-                "source_feed_id": 42,
+                "sources": [{ "kind": "feed", "id": 42 }],
                 "target_feed_id": 43,
                 "prompt": "Weekly",
             },
             "monthly": {
-                "source": "digests",
-                "source_feed_id": 42,
+                "sources": [{ "kind": "feed", "id": 42 }],
                 "target_feed_id": 42,
                 "prompt": "Monthly",
             },
@@ -364,7 +362,9 @@ git commit -m "feat: separate digest history from current entries"
 Replace the `_config` helper signature in `tests/test_digest.py` with:
 
 ```python
-def _config(source="raw_entries", source_feed_id=None, digest_feed_ids=None, history_lookback=None):
+def _config(sources=None, digest_feed_ids=None, history_lookback=None):
+    if sources is None:
+        sources = [{"kind": "category", "id": 10}]
     return Config(
         miniflux_base_url="https://reader.example.com",
         miniflux_api_key="test-key",
@@ -374,21 +374,20 @@ def _config(source="raw_entries", source_feed_id=None, digest_feed_ids=None, his
         agent_name="test-agent",
         agent=AgentConfig(
             name="test-agent",
-            source=source,
+            sources=sources,
             target_feed_id=42,
             prompt="Summarize these articles.",
-            source_feed_id=source_feed_id,
             history_lookback=history_lookback,
         ),
         digest_feed_ids={42} if digest_feed_ids is None else digest_feed_ids,
     )
 ```
 
-The default remains `{42}`. Pass `{42, 43}` to the multi-feed test instead of mutating the returned configuration. The `source="digests"` tests retain the same `{42}` value because it is not used by the digest-source branch.
+The default remains `{42}`. Pass `{42, 43}` to the multi-feed test instead of mutating the returned configuration. Feed-source tests retain the same `{42}` value because it is not used by the category-source history branch.
 
 Add `import pytest` to the test imports for the history-fetch failure assertion.
 
-Update `test_run_digest_raw_entries` to use a fixed end timestamp so the new bounded raw fetch is deterministic:
+Update the category-source test to use a fixed end timestamp so the new bounded category fetch is deterministic:
 
 ```python
 until_timestamp = since_timestamp + 3600
@@ -396,7 +395,8 @@ mock_client.fetch_digest_entries.return_value = []
 
 run_digest(config, since_timestamp, until_timestamp=until_timestamp)
 
-mock_client.fetch_raw_entries.assert_called_once_with(
+mock_client.fetch_category_entries.assert_called_once_with(
+    category_id=10,
     published_after=since_timestamp,
     published_before=until_timestamp,
 )
@@ -409,10 +409,10 @@ Append these tests to `tests/test_digest.py`:
 ```python
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest")
 @patch("miniflux_summarizer.digest.MinifluxClient")
-def test_raw_entries_exclude_all_digest_feeds_and_pass_history(mock_client_cls, mock_llm):
+def test_category_source_excludes_all_digest_feeds_and_passes_history(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"id": 1, "title": "Current", "url": "https://example.com/current", "content": "<p>New</p>", "feed": {"id": 1}},
         {"id": 2, "title": "Daily Digest", "url": "https://example.com/daily", "content": "<p>Old daily</p>", "feed": {"id": 42}},
         {"id": 3, "title": "Weekly Digest", "url": "https://example.com/weekly", "content": "<p>Old weekly</p>", "feed": {"id": 43}},
@@ -427,7 +427,9 @@ def test_raw_entries_exclude_all_digest_feeds_and_pass_history(mock_client_cls, 
 
     run_digest(config, 1000, until_timestamp=2000)
 
-    mock_client.fetch_raw_entries.assert_called_once_with(published_after=1000, published_before=2000)
+    mock_client.fetch_category_entries.assert_called_once_with(
+        category_id=10, published_after=1000, published_before=2000
+    )
     assert mock_client.fetch_digest_entries.call_count == 2
     assert [call.kwargs for call in mock_client.fetch_digest_entries.call_args_list] == [
         {"feed_id": 42, "published_after": 0, "published_before": 1000},
@@ -444,10 +446,10 @@ def test_raw_entries_exclude_all_digest_feeds_and_pass_history(mock_client_cls, 
 
 @patch("miniflux_summarizer.digest.generate_summary")
 @patch("miniflux_summarizer.digest.MinifluxClient")
-def test_raw_entries_with_only_digest_feeds_skips_history_and_llm(mock_client_cls, mock_llm):
+def test_category_source_with_only_digest_feeds_skips_history_and_llm(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"id": 2, "title": "Daily Digest", "feed": {"id": 42}},
     ]
 
@@ -464,7 +466,7 @@ def test_raw_entries_with_only_digest_feeds_skips_history_and_llm(mock_client_cl
 def test_explicit_history_lookback_uses_preceding_window(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"id": 1, "title": "Current", "feed": {"id": 1}},
     ]
     mock_client.fetch_digest_entries.return_value = []
@@ -487,7 +489,7 @@ def test_explicit_history_lookback_uses_preceding_window(mock_client_cls, mock_l
 def test_history_fetch_failure_prevents_llm_and_import(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"id": 1, "title": "Current", "feed": {"id": 1}},
     ]
     mock_client.fetch_digest_entries.side_effect = RuntimeError("history unavailable")
@@ -506,7 +508,7 @@ def test_history_fetch_failure_prevents_llm_and_import(mock_client_cls, mock_llm
 Run:
 
 ```bash
-uv run pytest tests/test_digest.py::test_raw_entries_exclude_all_digest_feeds_and_pass_history tests/test_digest.py::test_raw_entries_with_only_digest_feeds_skips_history_and_llm tests/test_digest.py::test_explicit_history_lookback_uses_preceding_window tests/test_digest.py::test_history_fetch_failure_prevents_llm_and_import -v
+uv run pytest tests/test_digest.py::test_category_source_excludes_all_digest_feeds_and_passes_history tests/test_digest.py::test_category_source_with_only_digest_feeds_skips_history_and_llm tests/test_digest.py::test_explicit_history_lookback_uses_preceding_window tests/test_digest.py::test_history_fetch_failure_prevents_llm_and_import -v
 ```
 
 Expected: FAIL because `run_digest` currently sends digest-feed entries to the LLM and never fetches the separate history window.
@@ -520,14 +522,18 @@ run_start_timestamp = int(datetime.now(UTC).timestamp())
 period_end = until_timestamp if until_timestamp is not None else run_start_timestamp
 ```
 
-For `source == "raw_entries"`, call:
+For each raw source object with `kind == "category"`, call:
 
 ```python
-entries = client.fetch_raw_entries(
+entries = client.fetch_category_entries(
+    category_id=source["id"],
     published_after=since_timestamp,
     published_before=period_end,
 )
-current_entries = _exclude_digest_feed_entries(entries, config.digest_feed_ids)
+if any(rule.get("type") == "generated_digests" for rule in config.agent.ignore):
+    current_entries = _exclude_digest_feed_entries(entries, config.digest_feed_ids)
+else:
+    current_entries = entries
 filtered = [entry for entry in current_entries if not should_ignore(entry, config.agent.ignore)]
 ```
 
@@ -559,7 +565,7 @@ Use `build_prompt_text(filtered, history_entries)` for `entries_text` and append
 system_prompt = f"{config.agent.prompt}\n\n{_HISTORY_SYSTEM_INSTRUCTION}"
 ```
 
-For the `source == "digests"` branch, retain the existing `published_before=until_timestamp` call, use `build_entries_text(filtered)`, and pass `config.agent.prompt` without the raw-entry history instruction.
+For feed-only source objects, retain the existing `published_before=until_timestamp` call, use `build_entries_text(filtered)`, and pass `config.agent.prompt` without the raw-source history instruction.
 
 - [ ] **Step 5: Run the focused digest tests and verify they pass**
 
@@ -573,13 +579,13 @@ Expected: all digest tests PASS, including the existing raw-entry, digest-source
 
 - [ ] **Step 6: Add the multi-agent integration case**
 
-Extend `test_full_pipeline_raw_entries` in `tests/test_integration.py` with three configured agents:
+Extend the category-source integration test in `tests/test_integration.py` with three configured agents:
 
 ```python
 "agents": {
-    "daily": {"source": "raw_entries", "target_feed_id": 42, "prompt": "Summarize"},
-    "weekly": {"source": "digests", "source_feed_id": 42, "target_feed_id": 43, "prompt": "Weekly"},
-    "monthly": {"source": "digests", "source_feed_id": 43, "target_feed_id": 42, "prompt": "Monthly"},
+    "daily": {"sources": [{ "kind": "category", "id": 10 }], "target_feed_id": 42, "prompt": "Summarize"},
+    "weekly": {"sources": [{"kind": "feed", "id": 42}], "target_feed_id": 43, "prompt": "Weekly"},
+    "monthly": {"sources": [{"kind": "feed", "id": 43}], "target_feed_id": 42, "prompt": "Monthly"},
 },
 ```
 
@@ -609,7 +615,7 @@ git commit -m "feat: add historical digest context"
 
 **Interfaces:**
 - Documents the `history_lookback` JSON field and its default.
-- Documents that every configured target feed is excluded from raw-entry input.
+- Documents that `generated_digests` explicitly excludes every configured target feed from raw-entry input.
 - Documents that prior digests from all configured target feeds are context only.
 
 - [ ] **Step 1: Update the README configuration example and tables**
@@ -626,7 +632,7 @@ Add this row to the agent-fields table:
 | `history_lookback` | no | Relative history duration for raw-entry context; defaults to the current run scope |
 ```
 
-Add a paragraph after the agent-modes table explaining that raw-entry agents exclude all configured agents' target feeds from current articles, then fetch the preceding history window from those unique feeds as labeled context. State that the model must include a historical topic only when current-period articles contain a meaningful update, and that digest-source agents are unchanged.
+Add a paragraph after the agent-modes table explaining that raw-entry agents exclude all configured agents' target feeds from current articles only when `generated_digests` is configured, then fetch the preceding history window from those unique feeds as labeled context. State that the model must include a historical topic only when current-period articles contain a meaningful update, and that feed-only agents are unchanged.
 
 - [ ] **Step 2: Run the complete test and quality suite**
 

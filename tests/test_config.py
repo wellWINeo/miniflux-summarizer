@@ -26,7 +26,7 @@ MINIMAL_CONFIG = {
     },
     "agents": {
         "test-agent": {
-            "source": "raw_entries",
+            "sources": [{"kind": "category", "id": 10}],
             "target_feed_id": 42,
             "prompt": "Summarize",
         },
@@ -43,19 +43,18 @@ def test_load_config_minimal():
     assert cfg.llm_base_url == "https://api.openai.com/v1"
     assert cfg.llm_api_key == "sk-test"
     assert cfg.agent_name == "test-agent"
-    assert cfg.source == "raw_entries"
+    assert cfg.sources == [{"kind": "category", "id": 10}]
     assert cfg.target_feed_id == 42
     assert cfg.prompt == "Summarize"
     assert cfg.ignore == []
 
 
-def test_load_config_with_digests_source():
+def test_load_config_with_feed_source():
     data = {
         **MINIMAL_CONFIG,
         "agents": {
             "weekly": {
-                "source": "digests",
-                "source_feed_id": 10,
+                "sources": [{"kind": "feed", "id": 10}],
                 "target_feed_id": 20,
                 "prompt": "Newsletter",
             },
@@ -63,8 +62,7 @@ def test_load_config_with_digests_source():
     }
     path = _write_config(data)
     cfg = load_config(path, "weekly")
-    assert cfg.source == "digests"
-    assert cfg.source_feed_id == 10
+    assert cfg.sources == [{"kind": "feed", "id": 10}]
     assert cfg.target_feed_id == 20
 
 
@@ -73,20 +71,18 @@ def test_load_config_parses_history_lookback_and_unique_digest_feeds():
         **MINIMAL_CONFIG,
         "agents": {
             "daily": {
-                "source": "raw_entries",
+                "sources": [{"kind": "category", "id": 10}],
                 "target_feed_id": 42,
                 "history_lookback": "-7d",
                 "prompt": "Daily",
             },
             "weekly": {
-                "source": "digests",
-                "source_feed_id": 42,
+                "sources": [{"kind": "feed", "id": 42}],
                 "target_feed_id": 43,
                 "prompt": "Weekly",
             },
             "monthly": {
-                "source": "digests",
-                "source_feed_id": 42,
+                "sources": [{"kind": "feed", "id": 42}],
                 "target_feed_id": 42,
                 "prompt": "Monthly",
             },
@@ -180,20 +176,110 @@ def test_load_config_unknown_agent_raises():
         load_config(path, "nonexistent")
 
 
-def test_load_config_digests_without_source_feed_id_raises():
+def test_load_config_without_sources_raises():
     data = {
         **MINIMAL_CONFIG,
         "agents": {
             "bad": {
-                "source": "digests",
                 "target_feed_id": 20,
                 "prompt": "Newsletter",
             },
         },
     }
     path = _write_config(data)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="requires 'sources'"):
         load_config(path, "bad")
+
+
+@pytest.mark.parametrize(
+    ("sources", "message"),
+    [
+        ("category", "list"),
+        (None, "list"),
+        ([], "non-empty"),
+        ([{}], "kind"),
+        ([{"kind": "category"}], "id"),
+        ([{"kind": "category", "id": "10"}], "integer"),
+        ([{"kind": "category", "id": True}], "integer"),
+        ([{"kind": "folder", "id": 10}], "kind"),
+        ([{"kind": "all", "id": 10}], "must not include"),
+    ],
+)
+def test_load_config_rejects_malformed_sources(sources, message):
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "bad": {
+                "sources": sources,
+                "target_feed_id": 20,
+                "prompt": "Newsletter",
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match=message):
+        load_config(_write_config(data), "bad")
+
+
+def test_load_config_accepts_all_source_without_id():
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "all": {
+                "sources": [{"kind": "all"}],
+                "target_feed_id": 20,
+                "prompt": "Newsletter",
+            },
+        },
+    }
+    assert load_config(_write_config(data), "all").sources == [{"kind": "all"}]
+
+
+def test_load_config_rejects_legacy_source_fields():
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "bad": {
+                "source": {"kind": "category", "id": 10},
+                "source_feed_id": 11,
+                "target_feed_id": 20,
+                "prompt": "Newsletter",
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="requires 'sources'"):
+        load_config(_write_config(data), "bad")
+
+
+def test_load_config_accepts_generated_digests_without_value():
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "daily": {
+                **MINIMAL_CONFIG["agents"]["test-agent"],
+                "ignore": [{"type": "generated_digests"}],
+            },
+        },
+    }
+
+    cfg = load_config(_write_config(data), "daily")
+    assert cfg.ignore == [{"type": "generated_digests"}]
+
+
+def test_load_config_rejects_generated_digests_value():
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "daily": {
+                **MINIMAL_CONFIG["agents"]["test-agent"],
+                "ignore": [{"type": "generated_digests", "value": "42"}],
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="without a value"):
+        load_config(_write_config(data), "daily")
 
 
 def test_preset_config_defaults():

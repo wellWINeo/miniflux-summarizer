@@ -47,6 +47,21 @@ def test_category_id_no_match():
     assert not should_ignore(_entry(category_id=10), rules)
 
 
+def test_generated_digests_match_configured_output_feed():
+    rules = [{"type": "generated_digests"}]
+    assert should_ignore(_entry(feed_id=42), rules, generated_digest_feed_ids={42, 43})
+
+
+def test_generated_digests_do_not_match_other_feed():
+    rules = [{"type": "generated_digests"}]
+    assert not should_ignore(_entry(feed_id=1), rules, generated_digest_feed_ids={42, 43})
+
+
+def test_generated_digests_without_feed_ids_do_not_match():
+    rules = [{"type": "generated_digests"}]
+    assert not should_ignore(_entry(feed_id=42), rules)
+
+
 def test_multiple_rules_any_match():
     rules = [
         {"type": "subject", "value": "ad"},

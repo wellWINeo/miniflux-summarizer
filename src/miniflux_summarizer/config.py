@@ -2,6 +2,14 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal, NotRequired, TypedDict, cast
+
+SourceKind = Literal["all", "category", "feed"]
+
+
+class SourceConfig(TypedDict):
+    kind: SourceKind
+    id: NotRequired[int]
 
 
 @dataclass
@@ -14,10 +22,9 @@ class PresetConfig:
 @dataclass
 class AgentConfig:
     name: str
-    source: str
+    sources: list[SourceConfig]
     target_feed_id: int
     prompt: str
-    source_feed_id: int | None = None
     history_lookback: int | None = None
     ignore: list[dict[str, str]] = field(default_factory=list)
     presets: dict[str, PresetConfig] = field(default_factory=dict)
@@ -35,8 +42,8 @@ class Config:
     digest_feed_ids: set[int]
 
     @property
-    def source(self) -> str:
-        return self.agent.source
+    def sources(self) -> list[SourceConfig]:
+        return self.agent.sources
 
     @property
     def target_feed_id(self) -> int:
@@ -45,10 +52,6 @@ class Config:
     @property
     def prompt(self) -> str:
         return self.agent.prompt
-
-    @property
-    def source_feed_id(self) -> int | None:
-        return self.agent.source_feed_id
 
     @property
     def ignore(self) -> list[dict[str, str]]:
@@ -71,6 +74,70 @@ def parse_history_lookback(value: str) -> int:
     return amount * multipliers[match.group(2)]
 
 
+def _parse_source(value: object, agent_name: str, index: int) -> SourceConfig:
+    if not isinstance(value, dict):
+        raise ValueError(f"Error: agent '{agent_name}' source at index {index} must be an object")
+
+    kind = value.get("kind")
+    if kind not in ("all", "category", "feed"):
+        raise ValueError(
+            f"Error: agent '{agent_name}' source at index {index} kind must be 'all', 'category', or 'feed'"
+        )
+
+    if kind == "all":
+        if "id" in value:
+            raise ValueError(f"Error: agent '{agent_name}' source at index {index} kind 'all' must not include 'id'")
+        return {"kind": "all"}
+
+    if "id" not in value:
+        raise ValueError(f"Error: agent '{agent_name}' source at index {index} requires 'id'")
+    source_id = value["id"]
+    if isinstance(source_id, bool) or not isinstance(source_id, int):
+        raise ValueError(f"Error: agent '{agent_name}' source at index {index} id must be an integer")
+
+    return {"kind": cast(SourceKind, kind), "id": source_id}
+
+
+def parse_sources(value: object, agent_name: str) -> list[SourceConfig]:
+    if not isinstance(value, list):
+        raise ValueError(f"Error: agent '{agent_name}' sources must be a list")
+    if not value:
+        raise ValueError(f"Error: agent '{agent_name}' sources must be non-empty")
+    return [_parse_source(source, agent_name, index) for index, source in enumerate(value)]
+
+
+def _parse_ignore_rules(value: object, agent_name: str) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise ValueError(f"Error: agent '{agent_name}' ignore must be a list")
+
+    rules: list[dict[str, str]] = []
+    for index, raw_rule in enumerate(value):
+        if not isinstance(raw_rule, dict):
+            raise ValueError(f"Error: agent '{agent_name}' ignore rule at index {index} must be an object")
+
+        rule_type = raw_rule.get("type")
+        if not isinstance(rule_type, str):
+            raise ValueError(f"Error: agent '{agent_name}' ignore rule at index {index} requires 'type'")
+
+        if rule_type == "generated_digests":
+            if "value" in raw_rule:
+                raise ValueError(
+                    f"Error: agent '{agent_name}' generated_digests ignore rule must be without a value"
+                )
+            rules.append({"type": rule_type})
+            continue
+
+        rule_value = raw_rule.get("value")
+        if rule_value is None:
+            rules.append({"type": rule_type})
+        elif isinstance(rule_value, str):
+            rules.append({"type": rule_type, "value": rule_value})
+        else:
+            raise ValueError(f"Error: agent '{agent_name}' ignore rule at index {index} value must be a string")
+
+    return rules
+
+
 def load_config(config_path: Path, agent_name: str, preset_name: str | None = None) -> Config:
     raw = json.loads(Path(config_path).read_text())
 
@@ -79,8 +146,13 @@ def load_config(config_path: Path, agent_name: str, preset_name: str | None = No
 
     agent_raw = raw["agents"][agent_name]
 
-    if agent_raw["source"] == "digests" and "source_feed_id" not in agent_raw:
-        raise ValueError(f"Error: agent '{agent_name}' with source 'digests' requires 'source_feed_id'")
+    if "sources" not in agent_raw:
+        raise ValueError(f"Error: agent '{agent_name}' requires 'sources'")
+
+    sources = parse_sources(agent_raw["sources"], agent_name)
+
+    if "source_feed_id" in agent_raw:
+        raise ValueError(f"Error: agent '{agent_name}' no longer supports 'source_feed_id'; use 'sources'")
 
     history_lookback_raw = agent_raw.get("history_lookback")
     history_lookback = (
@@ -99,12 +171,11 @@ def load_config(config_path: Path, agent_name: str, preset_name: str | None = No
 
     agent = AgentConfig(
         name=agent_name,
-        source=agent_raw["source"],
+        sources=sources,
         target_feed_id=agent_raw["target_feed_id"],
         prompt=agent_raw["prompt"],
-        source_feed_id=agent_raw.get("source_feed_id"),
         history_lookback=history_lookback,
-        ignore=agent_raw.get("ignore", []),
+        ignore=_parse_ignore_rules(agent_raw.get("ignore", []), agent_name),
         presets=presets,
     )
 

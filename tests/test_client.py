@@ -43,6 +43,31 @@ def test_fetch_raw_entries(client, mock_miniflux):
     )
 
 
+def test_fetch_category_entries(client, mock_miniflux):
+    mock_miniflux.get_category_entries.return_value = {
+        "total": 1,
+        "entries": [{"id": 1, "title": "Category article"}],
+    }
+
+    entries = client.fetch_category_entries(
+        category_id=10,
+        published_after=1700000000,
+        published_before=1700003600,
+    )
+
+    assert entries == [{"id": 1, "title": "Category article"}]
+    mock_miniflux.get_category_entries.assert_called_once_with(
+        10,
+        status=["read", "unread"],
+        published_after=1700000000,
+        published_before=1700003600,
+        order="published_at",
+        direction="asc",
+        limit=1000,
+        offset=0,
+    )
+
+
 def test_fetch_digest_entries(client, mock_miniflux):
     mock_miniflux.get_feed_entries.return_value = {
         "total": 1,

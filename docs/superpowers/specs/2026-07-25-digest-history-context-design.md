@@ -2,35 +2,38 @@
 
 ## Status
 
-Design approved for implementation.
+Implemented and superseded by the multi-source design in
+`docs/2026-09-02-multi-source-agents.md`. This record describes the history
+behavior that remains part of the current contract.
 
 ## Problem
 
-`raw_entries` agents fetch entries from all Miniflux feeds. Generated daily,
-weekly, or monthly digests are also Miniflux entries, so a later raw-entry run
-can send previous generated digests to the LLM as if they were new articles.
+`category` sources fetch entries from a configured Miniflux category. Generated
+daily, weekly, or monthly digests are also Miniflux entries, so a later
+category-source run can send previous generated digests to the LLM as if they
+were new articles.
 The model may then repeat topics for several days.
 
-The solution must prevent generated digests from entering the current-news
-input while still allowing the LLM to use prior digests to understand story
-continuity and describe meaningful updates.
+The solution must allow configured generated-digest feeds to be excluded from
+the current-news input while still allowing the LLM to use prior digests to
+understand story continuity and describe meaningful updates.
 
 ## Goals
 
-- Prevent all generated digest entries from being treated as current raw news.
+- Support explicit exclusion of generated digest entries from current raw news.
 - Provide prior digests as clearly separated historical context.
 - Include prior digests from all configured digest agents: daily, weekly,
   monthly, and any other configured agents.
 - Make the history window configurable, with a default matching the current
   run scope.
 - Ensure historical context alone can never cause a new digest to be created.
-- Preserve the existing behavior of `source: "digests"` agents.
+- Preserve the existing behavior of feed-only agents.
 
 ## Non-Goals
 
 - Semantic duplicate detection across unrelated RSS articles.
 - Post-processing or validation of the LLM's generated text.
-- Changing how newsletter agents consume their explicit `source_feed_id`.
+- Changing how feed-only agents consume their explicit source IDs.
 - Adding a new dependency or a persistent state store.
 
 ## Configuration
@@ -39,7 +42,7 @@ Add an optional `history_lookback` field to an agent configuration:
 
 ```json
 {
-  "source": "raw_entries",
+  "sources": [{ "kind": "category", "id": 10 }],
   "target_feed_id": 57,
   "history_lookback": "-7d",
   "prompt": "Summarize the current articles..."
@@ -71,9 +74,9 @@ It is computed from every configured agent's `target_feed_id`, not only the
 selected agent. A set is required so duplicate target feed IDs result in one
 Miniflux query and one exclusion boundary.
 
-Because these feeds are dedicated output feeds, every entry from a feed in
-`digest_feed_ids` is considered generated digest content for raw-entry input
-purposes.
+When `generated_digests` is configured, entries from feeds in
+`digest_feed_ids` are considered generated digest content for raw-entry input
+purposes. Without that rule, they remain eligible current entries.
 
 ## Data Flow
 
@@ -85,7 +88,8 @@ purposes.
 3. Fetch raw entries with `published_after=period_start` and
    `published_before=period_end`, using the same fixed boundary that defines
    the default lookback duration.
-4. Exclude entries whose `feed.id` is in `digest_feed_ids`.
+4. If the selected agent configures `generated_digests`, exclude entries whose
+   `feed.id` is in `digest_feed_ids`; otherwise retain those entries.
 5. Apply the selected agent's existing ignore rules to the remaining entries.
 6. If no current entries remain, log and return. Do not fetch history, call the
    LLM, or import an entry.
@@ -110,10 +114,10 @@ Historical entries are not passed through the selected agent's raw-entry
 ignore rules. They are context from the configured digest feeds, not current
 source articles.
 
-### Digest-source agents
+### Feed-source agents
 
-Agents with `source: "digests"` continue to fetch only their configured
-`source_feed_id` for the requested period. They do not receive the additional
+Agents with only feed sources continue to fetch only their configured feed
+IDs for the requested period. They do not receive the additional
 all-agent historical context section. Their existing weekly/monthly merge
 prompt remains authoritative.
 
@@ -198,7 +202,7 @@ No API or dependency changes are required.
 - The LLM receives clearly separated current and historical sections.
 - Only historical entries produce no LLM call or import.
 - A raw-entry run with no historical entries still generates normally.
-- A `source: "digests"` run retains its existing fetch and prompt behavior.
+- A feed-only run retains its existing fetch and prompt behavior.
 
 ### Integration coverage
 

@@ -57,7 +57,7 @@ Default template: `"{{agent_name}} Digest — {{date}}"` preserves current `gene
 {
   "agents": {
     "tech-daily": {
-      "source": "raw_entries",
+      "sources": [{ "kind": "category", "id": 10 }],
       "target_feed_id": 57,
       "prompt": "...",
       "presets": {
