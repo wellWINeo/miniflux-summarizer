@@ -28,6 +28,7 @@ class AgentConfig:
     history_lookback: int | None = None
     ignore: list[dict[str, str]] = field(default_factory=list)
     presets: dict[str, PresetConfig] = field(default_factory=dict)
+    autoread: bool = False
 
 
 @dataclass
@@ -56,6 +57,10 @@ class Config:
     @property
     def ignore(self) -> list[dict[str, str]]:
         return self.agent.ignore
+
+    @property
+    def autoread(self) -> bool:
+        return self.agent.autoread
 
 
 def parse_history_lookback(value: str) -> int:
@@ -161,6 +166,10 @@ def load_config(config_path: Path, agent_name: str, preset_name: str | None = No
         else None
     )
 
+    autoread = agent_raw.get("autoread", False)
+    if not isinstance(autoread, bool):
+        raise ValueError(f"Error: agent '{agent_name}' autoread must be a boolean")
+
     presets = {}
     for preset_key, preset_data in agent_raw.get("presets", {}).items():
         presets[preset_key] = PresetConfig(
@@ -177,6 +186,7 @@ def load_config(config_path: Path, agent_name: str, preset_name: str | None = No
         history_lookback=history_lookback,
         ignore=_parse_ignore_rules(agent_raw.get("ignore", []), agent_name),
         presets=presets,
+        autoread=autoread,
     )
 
     digest_feed_ids = {

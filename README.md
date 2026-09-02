@@ -69,6 +69,7 @@ miniflux-summarizer --config config.json --agent tech-monthly --from=-1m
       "target_feed_id": 42,
       "history_lookback": "-7d",
       "prompt": "Summarize these articles into a concise digest...",
+      "autoread": true,
       "ignore": [
         { "type": "subject", "value": "Sponsored" },
         { "type": "feed_id", "value": "321" },
@@ -100,6 +101,11 @@ Generated digest feeds are excluded from raw-source input only when the explicit
 | Field | Description |
 |-------|-------------|
 | `history_lookback` | Optional relative history window for raw-entry context, such as `-7d` |
+| `autoread` | Optional strict JSON boolean, default `false`; after a successful import, marks the filtered current entries as read |
+
+`autoread` only marks current entries that remain after ignore rules and raw-source
+generated-digest exclusion. Historical context entries are never marked read, and
+an import failure does not mark any entries read.
 
 ### Ignore rules
 
@@ -118,6 +124,7 @@ Generated digest feeds are excluded from raw-source input only when the explicit
 4. Converts HTML content to Markdown
 5. Sends to an LLM for summarization
 6. Imports the result as a new entry into the target feed via the Miniflux Import Entry API
+7. If `autoread` is `true`, marks the filtered current entries as read after the import succeeds
 
 Duplicate runs are safe — each entry uses a unique `external_id` (`miniflux-summarizer:<agent>:<preset-or-default>:<date>`).
 

@@ -47,6 +47,39 @@ def test_load_config_minimal():
     assert cfg.target_feed_id == 42
     assert cfg.prompt == "Summarize"
     assert cfg.ignore == []
+    assert cfg.agent.autoread is False
+
+
+def test_load_config_parses_autoread_true():
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "test-agent": {
+                **MINIMAL_CONFIG["agents"]["test-agent"],
+                "autoread": True,
+            },
+        },
+    }
+
+    cfg = load_config(_write_config(data), "test-agent")
+
+    assert cfg.agent.autoread is True
+
+
+@pytest.mark.parametrize("value", [None, "true", 0, 1, [], {}])
+def test_load_config_rejects_invalid_autoread(value):
+    data = {
+        **MINIMAL_CONFIG,
+        "agents": {
+            "test-agent": {
+                **MINIMAL_CONFIG["agents"]["test-agent"],
+                "autoread": value,
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="autoread must be a boolean"):
+        load_config(_write_config(data), "test-agent")
 
 
 def test_load_config_with_feed_source():

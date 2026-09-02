@@ -103,3 +103,6 @@ class MinifluxClient:
         if entry_id is None:
             raise ValueError(f"Invalid response from Miniflux: {result}")
         return int(entry_id)
+
+    def update_entries(self, entry_ids: list[int], status: str) -> bool:
+        return bool(self._client.update_entries(entry_ids, status))

@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -15,7 +15,7 @@ from miniflux_summarizer.digest import (
 )
 
 
-def _config(sources=None, digest_feed_ids=None, history_lookback=None, ignore=None):
+def _config(sources=None, digest_feed_ids=None, history_lookback=None, ignore=None, autoread=False):
     if sources is None:
         sources = [{"kind": "category", "id": 10}]
 
@@ -33,6 +33,7 @@ def _config(sources=None, digest_feed_ids=None, history_lookback=None, ignore=No
             prompt="Summarize these articles.",
             history_lookback=history_lookback,
             ignore=[] if ignore is None else ignore,
+            autoread=autoread,
         ),
         digest_feed_ids={42} if digest_feed_ids is None else digest_feed_ids,
     )
@@ -161,6 +162,69 @@ def test_run_digest_category_source(mock_client_cls, mock_llm):
     mock_llm.assert_called_once()
     import_call = mock_client.import_entry.call_args
     assert "<h1" in import_call.kwargs["content"]
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_run_digest_does_not_mark_entries_when_autoread_disabled(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_category_entries.return_value = [
+        {"id": 1, "title": "Article 1", "url": "https://example.com/1", "content": "<p>Content 1</p>"},
+    ]
+    mock_client.import_entry.return_value = 100
+
+    run_digest(_config(autoread=False), 1000, until_timestamp=2000)
+
+    mock_client.import_entry.assert_called_once()
+    mock_client.update_entries.assert_not_called()
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_run_digest_autoread_marks_only_filtered_current_entries_after_import(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_category_entries.return_value = [
+        {"id": 1, "title": "Current article", "content": "<p>Current</p>"},
+        {"id": 2, "title": "Sponsored article", "content": "<p>Ignored</p>"},
+    ]
+    mock_client.fetch_digest_entries.return_value = [
+        {"id": 99, "title": "Historical digest", "content": "<p>History</p>"},
+    ]
+    mock_client.import_entry.return_value = 100
+
+    def import_entry(**kwargs):
+        assert mock_client.update_entries.call_count == 0
+        return 100
+
+    mock_client.import_entry.side_effect = import_entry
+
+    run_digest(
+        _config(autoread=True, ignore=[{"type": "subject", "value": "Sponsored"}]),
+        1000,
+        until_timestamp=2000,
+    )
+
+    mock_client.update_entries.assert_called_once_with([1], "read")
+    assert mock_client.method_calls[-1] == call.update_entries([1], "read")
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_run_digest_import_failure_does_not_mark_entries_read(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_category_entries.return_value = [
+        {"id": 1, "title": "Article", "content": "<p>Content</p>"},
+    ]
+    mock_client.fetch_digest_entries.return_value = []
+    mock_client.import_entry.side_effect = RuntimeError("import failed")
+
+    with pytest.raises(RuntimeError, match="import failed"):
+        run_digest(_config(autoread=True), 1000, until_timestamp=2000)
+
+    mock_client.update_entries.assert_not_called()
 
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
