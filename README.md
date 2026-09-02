@@ -62,7 +62,10 @@ miniflux-summarizer --config config.json --agent tech-monthly --from=-1m
   },
   "agents": {
     "tech-daily": {
-      "source": { "kind": "category", "id": 10 },
+      "sources": [
+        { "kind": "all" },
+        { "kind": "category", "id": 10 }
+      ],
       "target_feed_id": 42,
       "history_lookback": "-7d",
       "prompt": "Summarize these articles into a concise digest...",
@@ -73,7 +76,7 @@ miniflux-summarizer --config config.json --agent tech-monthly --from=-1m
       ]
     },
     "tech-weekly": {
-      "source": { "kind": "feed", "id": 42 },
+      "sources": [{ "kind": "feed", "id": 42 }],
       "target_feed_id": 43,
       "prompt": "Create a weekly newsletter from these daily digests...",
       "ignore": []
@@ -84,12 +87,15 @@ miniflux-summarizer --config config.json --agent tech-monthly --from=-1m
 
 ### Agent modes
 
-| Source | Description |
+| Source kind | Description |
 |--------|-------------|
-| `category` | Fetches raw RSS entries from the Miniflux category identified by `source.id`, summarizes them into one digest |
-| `feed` | Reads existing digest entries from the Miniflux feed identified by `source.id`, accumulates them into a newsletter |
+| `all` | Fetches raw RSS entries from all Miniflux feeds |
+| `category` | Fetches raw RSS entries from the Miniflux category identified by `id` |
+| `feed` | Reads entries from the Miniflux feed identified by `id`, typically previously generated digests |
 
-Every agent requires a structured `source` object with `kind` set to `category` or `feed` and an integer `id`. Category sources use the raw-entry flow: every configured agent `target_feed_id` is excluded from the current run so generated digests do not re-enter the live news stream. The tool then fetches the preceding history window from each unique digest feed and passes it to the LLM as labeled context. `history_lookback` is optional and defaults to the current run scope. Historical entries are context only: the model should include a historical topic only when current-period articles contain a new fact, event, development, or meaningful change. Feed sources use the digest-entry flow and do not receive this raw-entry history context.
+Every agent requires a non-empty `sources` list. `all` has no `id`; `category` and `feed` require an integer `id`. Sources can be combined. The tool fetches every selected source, deduplicates entries by Miniflux entry ID (or a stable fallback when absent), and preserves chronological order. Raw sources use the raw-entry flow; feed sources use the digest-entry flow. A run containing a raw source receives the preceding history window from each unique configured target feed as labeled context. Feed-only runs retain the digest-entry flow without that history section.
+
+Generated digest feeds are excluded from raw-source input only when the explicit `generated_digests` ignore rule is configured. This rule has no `value` and derives its feed IDs from every agent's `target_feed_id`.
 
 | Field | Description |
 |-------|-------------|
@@ -102,16 +108,18 @@ Every agent requires a structured `source` object with `kind` set to `category` 
 | `subject` | Entry title (case-insensitive substring) |
 | `feed_id` | Feed ID (exact match) |
 | `category_id` | Category ID (exact match) |
+| `generated_digests` | Generated target feeds for raw-source entries; omit `value` |
 
 ## How it works
 
-1. Fetches entries from Miniflux for the given time period
-2. Filters out entries matching ignore rules
-3. Converts HTML content to Markdown
-4. Sends to an LLM for summarization
-5. Imports the result as a new entry into the target feed via the Miniflux Import Entry API
+1. Fetches every configured source from Miniflux for the given time period
+2. Merges, deduplicates, and chronologically orders the selected entries
+3. Applies ignore rules, including optional generated-digest exclusion for raw sources
+4. Converts HTML content to Markdown
+5. Sends to an LLM for summarization
+6. Imports the result as a new entry into the target feed via the Miniflux Import Entry API
 
-Duplicate runs are safe — each entry uses a unique `external_id` (`miniflux-summarizer:<agent>:<date>`).
+Duplicate runs are safe — each entry uses a unique `external_id` (`miniflux-summarizer:<agent>:<preset-or-default>:<date>`).
 
 ## Systemd timer example
 

@@ -4,7 +4,7 @@
 
 **Goal:** Build a CLI tool that generates LLM-powered digests and newsletters from Miniflux RSS entries, executed periodically via cron/systemd timers.
 
-**Architecture:** CLI tool fetches entries from Miniflux API, filters them, sends to an OpenAI-compatible LLM for summarization, and imports the result as a new entry into a target feed. Two source kinds: `category` (digests from raw RSS entries in a category) and `feed` (newsletters from existing digest entries).
+**Architecture:** CLI tool fetches all configured Miniflux source objects, filters and deduplicates the merged entries, sends them to an OpenAI-compatible LLM for summarization, and imports the result as a new entry into a target feed. Source kinds are `all` and `category` for raw entries and `feed` for existing digest entries.
 
 **Tech Stack:** Python 3.12+, miniflux Python client, httpx, openai SDK, markdownify, Nix flakes for build/packaging.
 
@@ -170,7 +170,7 @@ MINIMAL_CONFIG = {
     },
     "agents": {
         "test-agent": {
-            "source": { "kind": "category", "id": 10 },
+            "sources": [{ "kind": "category", "id": 10 }],
             "target_feed_id": 42,
             "prompt": "Summarize",
         },
@@ -187,7 +187,7 @@ def test_load_config_minimal():
     assert cfg.llm_base_url == "https://api.openai.com/v1"
     assert cfg.llm_api_key == "sk-test"
     assert cfg.agent_name == "test-agent"
-    assert cfg.source == {"kind": "category", "id": 10}
+    assert cfg.sources == [{"kind": "category", "id": 10}]
     assert cfg.target_feed_id == 42
     assert cfg.prompt == "Summarize"
     assert cfg.ignore == []
@@ -198,7 +198,7 @@ def test_load_config_with_feed_source():
         **MINIMAL_CONFIG,
         "agents": {
             "weekly": {
-                "source": { "kind": "feed", "id": 10 },
+                "sources": [{ "kind": "feed", "id": 10 }],
                 "target_feed_id": 20,
                 "prompt": "Newsletter",
             },
@@ -206,7 +206,7 @@ def test_load_config_with_feed_source():
     }
     path = _write_config(data)
     cfg = load_config(path, "weekly")
-    assert cfg.source == {"kind": "feed", "id": 10}
+    assert cfg.sources == [{"kind": "feed", "id": 10}]
     assert cfg.target_feed_id == 20
 
 
@@ -268,7 +268,7 @@ from pathlib import Path
 @dataclass
 class AgentConfig:
     name: str
-    source: SourceConfig
+    sources: list[SourceConfig]
     target_feed_id: int
     prompt: str
     ignore: list[dict[str, str]] = field(default_factory=list)
@@ -296,7 +296,7 @@ def load_config(config_path: Path, agent_name: str) -> Config:
 
     agent = AgentConfig(
         name=agent_name,
-        source=parse_source(agent_raw["source"], agent_name),
+        sources=parse_sources(agent_raw["sources"], agent_name),
         target_feed_id=agent_raw["target_feed_id"],
         prompt=agent_raw["prompt"],
         ignore=agent_raw.get("ignore", []),
@@ -731,7 +731,9 @@ from miniflux_summarizer.config import AgentConfig, Config
 from miniflux_summarizer.digest import build_entries_text, generate_digest_title, run_digest
 
 
-def _config(source={"kind": "category", "id": 10}):
+def _config(sources=None):
+    if sources is None:
+        sources = [{"kind": "category", "id": 10}]
     return Config(
         miniflux_base_url="https://reader.example.com",
         miniflux_api_key="test-key",
@@ -741,7 +743,7 @@ def _config(source={"kind": "category", "id": 10}):
         agent_name="test-agent",
         agent=AgentConfig(
             name="test-agent",
-            source=source,
+            sources=sources,
             target_feed_id=42,
             prompt="Summarize these articles.",
         ),
@@ -800,7 +802,7 @@ def test_run_digest_feed_source(mock_client_cls, mock_llm):
     ]
     mock_client.import_entry.return_value = 200
 
-    config = _config(source={"kind": "feed", "id": 10})
+    config = _config(sources=[{"kind": "feed", "id": 10}])
     since_timestamp = 1744300000
 
     run_digest(config, since_timestamp)
@@ -864,16 +866,22 @@ def run_digest(config: Config, since_timestamp: int) -> None:
         api_key=config.miniflux_api_key,
     )
 
-    if config.agent.source["kind"] == "category":
-        entries = client.fetch_category_entries(
-            category_id=config.agent.source["id"],
-            published_after=since_timestamp,
-        )
-    else:
-        entries = client.fetch_digest_entries(
-            feed_id=config.agent.source["id"],
-            published_after=since_timestamp,
-        )
+    entry_batches = []
+    for source in config.agent.sources:
+        if source["kind"] == "all":
+            entries = client.fetch_raw_entries(published_after=since_timestamp)
+        elif source["kind"] == "category":
+            entries = client.fetch_category_entries(
+                category_id=source["id"],
+                published_after=since_timestamp,
+            )
+        else:
+            entries = client.fetch_digest_entries(
+                feed_id=source["id"],
+                published_after=since_timestamp,
+            )
+        entry_batches.append(entries)
+    entries = merge_and_deduplicate_entries(entry_batches)
 
     filtered = [
         e for e in entries if not should_ignore(e, config.agent.ignore)
@@ -977,7 +985,7 @@ def test_cli_main_invokes_digest(mock_run):
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "test": {
-                "source": { "kind": "category", "id": 10 },
+                "sources": [{ "kind": "category", "id": 10 }],
                 "target_feed_id": 1,
                 "prompt": "p",
             }
@@ -1088,7 +1096,7 @@ def test_full_pipeline_category_source():
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "daily": {
-                "source": { "kind": "category", "id": 10 },
+                "sources": [{ "kind": "category", "id": 10 }],
                 "target_feed_id": 42,
                 "prompt": "Summarize",
             }
@@ -1140,7 +1148,7 @@ def test_full_pipeline_feed_source():
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "weekly": {
-                "source": { "kind": "feed", "id": 42 },
+                "sources": [{ "kind": "feed", "id": 42 }],
                 "target_feed_id": 43,
                 "prompt": "Newsletter",
             }

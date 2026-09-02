@@ -4,17 +4,17 @@
 
 **Goal:** Prevent generated digests from re-entering current category-source input while giving category sources configurable historical digest context for meaningful story updates.
 
-**Architecture:** Load a deduplicated set of every configured agent's target feed IDs into `Config`. Category-source runs exclude all those feeds from current entries, then independently fetch the preceding history window from each unique digest feed and pass it to the LLM in a labeled context section. Feed-source agents retain their existing `source.id` flow.
+**Architecture:** Load a deduplicated set of every configured agent's target feed IDs into `Config`. Runs with raw entries independently fetch the preceding history window from each unique digest feed and pass it to the LLM in a labeled context section. `generated_digests` explicitly excludes those feeds from raw batches; feed-only agents retain their feed-source flow.
 
 **Tech Stack:** Python 3.12, pytest, Miniflux Python client, OpenAI-compatible LLM client, Markdown/Markdownify, Ruff, mypy, Nix.
 
 ## Global Constraints
 
-- Generated digest entries must never be treated as current raw news.
+- When `generated_digests` is configured, generated digest entries must not be treated as current raw news.
 - All configured `target_feed_id` values must be deduplicated with a `set[int]`.
 - `history_lookback` accepts `-Nh`, `-Nd`, `-Nw`, or `-Nm` and defaults to the current run scope.
 - Historical context must end at the current period start and must not create a digest by itself.
-- `source.kind: "feed"` behavior remains unchanged.
+- Feed-only source behavior remains unchanged.
 - Historical-feed fetch failures fail the run; an empty history result is valid.
 - Do not add dependencies or persistent state.
 - Use the existing project commands through `uv` inside the Nix development environment.
@@ -54,18 +54,18 @@ def test_load_config_parses_history_lookback_and_unique_digest_feeds():
         **MINIMAL_CONFIG,
         "agents": {
             "daily": {
-                "source": { "kind": "category", "id": 10 },
+                "sources": [{ "kind": "category", "id": 10 }],
                 "target_feed_id": 42,
                 "history_lookback": "-7d",
                 "prompt": "Daily",
             },
             "weekly": {
-                "source": { "kind": "feed", "id": 42 },
+                "sources": [{ "kind": "feed", "id": 42 }],
                 "target_feed_id": 43,
                 "prompt": "Weekly",
             },
             "monthly": {
-                "source": { "kind": "feed", "id": 42 },
+                "sources": [{ "kind": "feed", "id": 42 }],
                 "target_feed_id": 42,
                 "prompt": "Monthly",
             },
@@ -362,7 +362,9 @@ git commit -m "feat: separate digest history from current entries"
 Replace the `_config` helper signature in `tests/test_digest.py` with:
 
 ```python
-def _config(source={"kind": "category", "id": 10}, digest_feed_ids=None, history_lookback=None):
+def _config(sources=None, digest_feed_ids=None, history_lookback=None):
+    if sources is None:
+        sources = [{"kind": "category", "id": 10}]
     return Config(
         miniflux_base_url="https://reader.example.com",
         miniflux_api_key="test-key",
@@ -372,7 +374,7 @@ def _config(source={"kind": "category", "id": 10}, digest_feed_ids=None, history
         agent_name="test-agent",
         agent=AgentConfig(
             name="test-agent",
-            source=source,
+            sources=sources,
             target_feed_id=42,
             prompt="Summarize these articles.",
             history_lookback=history_lookback,
@@ -520,7 +522,7 @@ run_start_timestamp = int(datetime.now(UTC).timestamp())
 period_end = until_timestamp if until_timestamp is not None else run_start_timestamp
 ```
 
-For `source["kind"] == "category"`, call:
+For each raw source object with `kind == "category"`, call:
 
 ```python
 entries = client.fetch_category_entries(
@@ -528,7 +530,10 @@ entries = client.fetch_category_entries(
     published_after=since_timestamp,
     published_before=period_end,
 )
-current_entries = _exclude_digest_feed_entries(entries, config.digest_feed_ids)
+if any(rule.get("type") == "generated_digests" for rule in config.agent.ignore):
+    current_entries = _exclude_digest_feed_entries(entries, config.digest_feed_ids)
+else:
+    current_entries = entries
 filtered = [entry for entry in current_entries if not should_ignore(entry, config.agent.ignore)]
 ```
 
@@ -560,7 +565,7 @@ Use `build_prompt_text(filtered, history_entries)` for `entries_text` and append
 system_prompt = f"{config.agent.prompt}\n\n{_HISTORY_SYSTEM_INSTRUCTION}"
 ```
 
-For the `source["kind"] == "feed"` branch, retain the existing `published_before=until_timestamp` call, use `build_entries_text(filtered)`, and pass `config.agent.prompt` without the category-source history instruction.
+For feed-only source objects, retain the existing `published_before=until_timestamp` call, use `build_entries_text(filtered)`, and pass `config.agent.prompt` without the raw-source history instruction.
 
 - [ ] **Step 5: Run the focused digest tests and verify they pass**
 
@@ -578,9 +583,9 @@ Extend the category-source integration test in `tests/test_integration.py` with 
 
 ```python
 "agents": {
-    "daily": {"source": { "kind": "category", "id": 10 }, "target_feed_id": 42, "prompt": "Summarize"},
-    "weekly": {"source": {"kind": "feed", "id": 42}, "target_feed_id": 43, "prompt": "Weekly"},
-    "monthly": {"source": {"kind": "feed", "id": 43}, "target_feed_id": 42, "prompt": "Monthly"},
+    "daily": {"sources": [{ "kind": "category", "id": 10 }], "target_feed_id": 42, "prompt": "Summarize"},
+    "weekly": {"sources": [{"kind": "feed", "id": 42}], "target_feed_id": 43, "prompt": "Weekly"},
+    "monthly": {"sources": [{"kind": "feed", "id": 43}], "target_feed_id": 42, "prompt": "Monthly"},
 },
 ```
 
@@ -610,7 +615,7 @@ git commit -m "feat: add historical digest context"
 
 **Interfaces:**
 - Documents the `history_lookback` JSON field and its default.
-- Documents that every configured target feed is excluded from raw-entry input.
+- Documents that `generated_digests` explicitly excludes every configured target feed from raw-entry input.
 - Documents that prior digests from all configured target feeds are context only.
 
 - [ ] **Step 1: Update the README configuration example and tables**
@@ -627,7 +632,7 @@ Add this row to the agent-fields table:
 | `history_lookback` | no | Relative history duration for raw-entry context; defaults to the current run scope |
 ```
 
-Add a paragraph after the agent-modes table explaining that raw-entry agents exclude all configured agents' target feeds from current articles, then fetch the preceding history window from those unique feeds as labeled context. State that the model must include a historical topic only when current-period articles contain a meaningful update, and that digest-source agents are unchanged.
+Add a paragraph after the agent-modes table explaining that raw-entry agents exclude all configured agents' target feeds from current articles only when `generated_digests` is configured, then fetch the preceding history window from those unique feeds as labeled context. State that the model must include a historical topic only when current-period articles contain a meaningful update, and that feed-only agents are unchanged.
 
 - [ ] **Step 2: Run the complete test and quality suite**
 

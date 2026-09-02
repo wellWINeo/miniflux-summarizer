@@ -4,10 +4,12 @@
 
 A CLI tool that periodically generates digests and newsletters from Miniflux RSS entries using an LLM. Executed via cron or systemd timers.
 
-## Modes
+## Source modes
 
-- **Digest** (`source.kind: "category"`) — Fetches raw entries from one Miniflux category for a time period, summarizes them into a single entry.
-- **Newsletter** (`source.kind: "feed"`) — Reads existing digest entries from a specific feed for a time period, accumulates them into a newsletter entry.
+- **All raw entries** (`sources: [{"kind": "all"}]`) — Fetches raw entries from all Miniflux feeds for a time period.
+- **Category raw entries** (`sources: [{"kind": "category", "id": 10}]`) — Fetches raw entries from a Miniflux category.
+- **Feed entries** (`sources: [{"kind": "feed", "id": 42}]`) — Reads entries from a specific feed for a time period, typically accumulating generated digests into a newsletter.
+- Multiple source objects can be combined; results are deduplicated and ordered chronologically.
 
 ## CLI Interface
 
@@ -36,7 +38,7 @@ miniflux-summarizer --config /path/to/config.json --agent "tech-monthly" --from=
   },
   "agents": {
     "tech-daily": {
-      "source": { "kind": "category", "id": 10 },
+      "sources": [{ "kind": "category", "id": 10 }],
       "target_feed_id": 42,
       "prompt": "Summarize these articles...",
       "ignore": [
@@ -46,7 +48,7 @@ miniflux-summarizer --config /path/to/config.json --agent "tech-monthly" --from=
       ]
     },
     "tech-weekly": {
-      "source": { "kind": "feed", "id": 42 },
+      "sources": [{ "kind": "feed", "id": 42 }],
       "target_feed_id": 43,
       "prompt": "Create a weekly newsletter from these daily digests...",
       "ignore": []
@@ -59,10 +61,10 @@ miniflux-summarizer --config /path/to/config.json --agent "tech-monthly" --from=
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `source` | yes | Object with `kind` (`"category"` or `"feed"`) and integer `id` |
+| `sources` | yes | Non-empty list of `{ "kind": "all" }`, `{ "kind": "category", "id": integer }`, or `{ "kind": "feed", "id": integer }` |
 | `target_feed_id` | yes | Feed ID where generated entry is imported |
 | `prompt` | yes | LLM system prompt |
-| `ignore` | no | List of filter rules |
+| `ignore` | no | List of filter rules, including value-less `generated_digests` for raw sources |
 
 ### Ignore Rule Types
 
@@ -71,6 +73,7 @@ miniflux-summarizer --config /path/to/config.json --agent "tech-monthly" --from=
 | `subject` | Entry title (substring match, case-insensitive) |
 | `feed_id` | Entry's feed ID (exact match) |
 | `category_id` | Entry's feed category ID (exact match) |
+| `generated_digests` | Configured agent target feeds for raw entries; no value |
 
 ## Architecture
 
@@ -79,9 +82,12 @@ CLI (cli.py)
   │
   ├─ Load config, resolve agent
   │
-  ├─ Fetch entries (client.py)
-  │   ├─ category: get_category_entries(source.id, published_after=<from>, status=['read','unread'])
-  │   └─ feed: get_feed_entries(source.id, published_after=<from>)
+  ├─ Fetch each entry source (client.py)
+  │   ├─ all: get_entries(published_after=<from>, status=['read','unread'])
+  │   ├─ category: get_category_entries(source object ID, published_after=<from>, status=['read','unread'])
+  │   └─ feed: get_feed_entries(source object ID, published_after=<from>)
+  │
+  ├─ Merge, deduplicate, and order all source results
   │
   ├─ Apply ignore filters (filter.py)
   │
@@ -93,7 +99,7 @@ CLI (cli.py)
   │
   └─ Import entry into target feed (client.py)
       POST /v1/feeds/{target_feed_id}/entries/import
-      Uses external_id for dedup (format: "miniflux-summarizer:<agent>:<date>")
+      Uses external_id for dedup (format: "miniflux-summarizer:<agent>:<preset-or-default>:<date>")
 ```
 
 ## Entry Import

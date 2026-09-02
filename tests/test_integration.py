@@ -11,18 +11,19 @@ def test_full_pipeline_category_source():
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "daily": {
-                "source": {"kind": "category", "id": 10},
+                "sources": [{"kind": "category", "id": 10}],
                 "target_feed_id": 42,
                 "prompt": "Summarize",
                 "history_lookback": "-1d",
+                "ignore": [{"type": "generated_digests"}],
             },
             "weekly": {
-                "source": {"kind": "feed", "id": 42},
+                "sources": [{"kind": "feed", "id": 42}],
                 "target_feed_id": 43,
                 "prompt": "Weekly",
             },
             "monthly": {
-                "source": {"kind": "feed", "id": 43},
+                "sources": [{"kind": "feed", "id": 43}],
                 "target_feed_id": 42,
                 "prompt": "Monthly",
             }
@@ -97,7 +98,7 @@ def test_full_pipeline_feed_source():
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "weekly": {
-                "source": {"kind": "feed", "id": 42},
+                "sources": [{"kind": "feed", "id": 42}],
                 "target_feed_id": 43,
                 "prompt": "Newsletter",
             }
@@ -149,7 +150,7 @@ def test_full_pipeline_with_filtering():
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "daily": {
-                "source": {"kind": "category", "id": 10},
+                "sources": [{"kind": "category", "id": 10}],
                 "target_feed_id": 42,
                 "prompt": "Summarize",
                 "ignore": [

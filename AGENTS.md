@@ -6,8 +6,9 @@
 
 The domain is personal or team news curation and scheduled content aggregation. It is intended to run non-interactively from cron or systemd timers:
 
-- A `category` source turns raw RSS articles from one Miniflux category into a digest.
+- An `all` or `category` source turns raw RSS articles into a digest.
 - A `feed` source turns previously generated digest entries from one feed into a newsletter in another feed.
+- Multiple sources can be combined and are merged, deduplicated, and ordered chronologically.
 - Agent prompts define the editorial behavior; the application does not impose a summary format beyond converting the returned Markdown to HTML.
 
 ## Tech Stack
@@ -72,14 +73,16 @@ Single-package Python CLI (no subpackages). Entry point: `src/miniflux_summarize
 
 Execution flow: CLI → config and preset loading → fetch entries → filter → HTML-to-Markdown → LLM summarize → Markdown-to-HTML → import entry through the Miniflux API.
 
-`run_digest()` is the orchestration boundary. It validates the source mode, fetches the appropriate entries, returns without calling the LLM when nothing remains after filtering, then creates and imports the resulting entry.
+`run_digest()` is the orchestration boundary. It validates the source list, fetches every selected source, merges and deduplicates entries, returns without calling the LLM when nothing remains after filtering, then creates and imports the resulting entry.
 
 ### Sources And Filtering
 
+- `all` fetches all read and unread RSS entries after the start timestamp.
 - `category` fetches all read and unread RSS entries from the configured source category after the start timestamp.
-- `feed` fetches entries from the configured source feed; the source object is mandatory and identifies the feed ID.
+- `feed` fetches entries from the configured source feed; the feed source object identifies the feed ID.
+- Multiple source batches are merged in configured order, deduplicated by entry ID (or canonical entry data when no ID exists), and sorted by publication time.
 - Retrieval is ordered ascending by publication time and paginated in batches of 1,000. Preserve this behavior when changing client calls so large time windows are complete.
-- Ignore rules support `subject` (case-insensitive title substring), `feed_id`, and `category_id`. Unknown rules currently do not match anything.
+- Ignore rules support `subject` (case-insensitive title substring), `feed_id`, `category_id`, and value-less `generated_digests`. `generated_digests` excludes all configured agent target feeds only for entries fetched by `all`/`category` sources; it is not implicit. Unknown rules currently do not match anything.
 
 ### Time Ranges, Presets, And Titles
 
@@ -96,9 +99,9 @@ The JSON configuration has three top-level sections:
 
 - `miniflux`: `base_url` and `api_key`.
 - `llm`: `model`, `base_url`, and `api_key` for an OpenAI-compatible endpoint.
-- `agents`: named agent objects with structured `source`, `target_feed_id`, `prompt`, optional `history_lookback`, `ignore`, and `presets`.
+- `agents`: named agent objects with required non-empty `sources`, `target_feed_id`, `prompt`, optional `history_lookback`, `ignore`, and `presets`.
 
-`source` must be an object of the form `{ "kind": "category" | "feed", "id": integer }`. `category` selects raw RSS entries from a Miniflux category; `feed` selects digest entries from a Miniflux feed. `load_config()` raises `ValueError` for an unknown agent, unknown selected preset, or a missing, malformed, unsupported, or non-integer source; keep configuration parsing library-friendly rather than calling `sys.exit()` there.
+`sources` must be a non-empty list of `{ "kind": "all" }`, `{ "kind": "category", "id": integer }`, or `{ "kind": "feed", "id": integer }`. `all` and `category` select raw RSS entries; `feed` selects entries from a feed. `load_config()` raises `ValueError` for an unknown agent, unknown selected preset, or a missing, empty, malformed, unsupported, or non-integer source; keep configuration parsing library-friendly rather than calling `sys.exit()` there.
 
 The LLM request uses the configured prompt as the system message and all formatted entries as the user message. Both LLM and entry-import requests have a 60-second timeout. LLM `APIError` exceptions are converted to `RuntimeError`; do not silently discard failed generation or import operations.
 

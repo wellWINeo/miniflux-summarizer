@@ -6,6 +6,7 @@ import pytest
 from miniflux_summarizer.config import AgentConfig, Config
 from miniflux_summarizer.digest import (
     _exclude_digest_feed_entries,
+    _merge_entries,
     _merge_history_entries,
     build_entries_text,
     build_prompt_text,
@@ -14,9 +15,9 @@ from miniflux_summarizer.digest import (
 )
 
 
-def _config(source=None, digest_feed_ids=None, history_lookback=None):
-    if source is None:
-        source = {"kind": "category", "id": 10}
+def _config(sources=None, digest_feed_ids=None, history_lookback=None, ignore=None):
+    if sources is None:
+        sources = [{"kind": "category", "id": 10}]
 
     return Config(
         miniflux_base_url="https://reader.example.com",
@@ -27,10 +28,11 @@ def _config(source=None, digest_feed_ids=None, history_lookback=None):
         agent_name="test-agent",
         agent=AgentConfig(
             name="test-agent",
-            source=source,
+            sources=sources,
             target_feed_id=42,
             prompt="Summarize these articles.",
             history_lookback=history_lookback,
+            ignore=[] if ignore is None else ignore,
         ),
         digest_feed_ids={42} if digest_feed_ids is None else digest_feed_ids,
     )
@@ -86,6 +88,25 @@ def test_merge_history_entries_deduplicates_and_sorts():
     assert result[0]["title"] == "Earlier"
 
 
+def test_merge_entries_deduplicates_ids_and_stable_fallbacks_in_chronological_order():
+    result = _merge_entries(
+        [
+            [
+                {"id": 2, "title": "Later", "published_at": 200},
+                {"title": "Fallback later", "url": "https://example.com/later", "published_at": 200},
+            ],
+            [
+                {"id": 1, "title": "Earlier", "published_at": 100},
+                {"id": 2, "title": "Duplicate later", "published_at": 200},
+                {"title": "Fallback later", "url": "https://example.com/later", "published_at": 200},
+            ],
+        ]
+    )
+
+    assert [entry.get("id", entry["title"]) for entry in result] == [1, 2, "Fallback later"]
+    assert result[1]["title"] == "Later"
+
+
 def test_build_prompt_text_separates_current_articles_and_history():
     current = [{"title": "Current Article", "url": "https://example.com/current", "content": "<p>Update</p>"}]
     history = [{"title": "Previous Digest", "url": "https://example.com/history", "content": "<p>Old topic</p>"}]
@@ -129,6 +150,135 @@ def test_run_digest_category_source(mock_client_cls, mock_llm):
     mock_llm.assert_called_once()
     import_call = mock_client.import_entry.call_args
     assert "<h1" in import_call.kwargs["content"]
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_run_digest_all_source_fetches_all_raw_entries(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_raw_entries.return_value = [
+        {"id": 1, "title": "Article", "url": "https://example.com/1", "content": "<p>Content</p>"}
+    ]
+    mock_client.fetch_digest_entries.return_value = []
+    mock_client.import_entry.return_value = 100
+
+    run_digest(_config(sources=[{"kind": "all"}], digest_feed_ids=set()), 1000, until_timestamp=2000)
+
+    mock_client.fetch_raw_entries.assert_called_once_with(published_after=1000, published_before=2000)
+    mock_client.fetch_category_entries.assert_not_called()
+    mock_client.fetch_digest_entries.assert_not_called()
+    mock_llm.assert_called_once()
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_run_digest_merges_multiple_sources_in_order_and_deduplicates(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_raw_entries.return_value = [
+        {"id": 3, "title": "All article", "published_at": 300, "content": "<p>All</p>"},
+    ]
+    mock_client.fetch_category_entries.return_value = [
+        {"id": 1, "title": "Category article", "published_at": 100, "content": "<p>Category</p>"},
+        {"id": 3, "title": "Duplicate article", "published_at": 300, "content": "<p>Duplicate</p>"},
+    ]
+    mock_client.fetch_digest_entries.return_value = [
+        {"id": 2, "title": "Digest article", "published_at": 200, "content": "<p>Digest</p>"},
+        {"id": 3, "title": "Duplicate digest", "published_at": 300, "content": "<p>Duplicate</p>"},
+    ]
+    mock_client.import_entry.return_value = 100
+
+    config = _config(
+        sources=[{"kind": "all"}, {"kind": "category", "id": 10}, {"kind": "feed", "id": 42}],
+        digest_feed_ids=set(),
+    )
+    run_digest(config, 1000, until_timestamp=2000)
+
+    assert mock_client.fetch_raw_entries.call_args.kwargs == {"published_after": 1000, "published_before": 2000}
+    assert mock_client.fetch_category_entries.call_args.kwargs == {
+        "category_id": 10,
+        "published_after": 1000,
+        "published_before": 2000,
+    }
+    assert mock_client.fetch_digest_entries.call_args.kwargs == {
+        "feed_id": 42,
+        "published_after": 1000,
+        "published_before": 2000,
+    }
+
+    entries_text = mock_llm.call_args.kwargs["entries_text"]
+    assert entries_text.index("Category article") < entries_text.index("Digest article") < entries_text.index("All article")
+    assert entries_text.count("Duplicate article") == 0
+    assert entries_text.count("All article") == 1
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_generated_digest_exclusion_applies_only_to_raw_source_entries(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_raw_entries.return_value = [
+        {"id": 1, "title": "Raw generated copy", "published_at": 100, "feed": {"id": 42}},
+        {"id": 2, "title": "Raw article", "published_at": 200, "feed": {"id": 1}},
+    ]
+    mock_client.fetch_digest_entries.return_value = [
+        {"id": 1, "title": "Selected digest", "published_at": 100, "feed": {"id": 42}},
+    ]
+    mock_client.import_entry.return_value = 100
+
+    config = _config(
+        sources=[{"kind": "all"}, {"kind": "feed", "id": 42}],
+        digest_feed_ids={42},
+        ignore=[{"type": "generated_digests"}],
+    )
+    run_digest(config, 0, until_timestamp=300)
+
+    entries_text = mock_llm.call_args.kwargs["entries_text"]
+    assert "Raw generated copy" not in entries_text
+    assert "Raw article" in entries_text
+    assert "Selected digest" in entries_text
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_raw_sources_do_not_implicitly_exclude_generated_digest_feeds(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_raw_entries.return_value = [
+        {"id": 1, "title": "Generated digest entry", "published_at": 100, "feed": {"id": 42}},
+    ]
+    mock_client.fetch_digest_entries.return_value = []
+    mock_client.import_entry.return_value = 100
+
+    run_digest(_config(sources=[{"kind": "all"}], digest_feed_ids={42}), 0, until_timestamp=300)
+
+    assert "Generated digest entry" in mock_llm.call_args.kwargs["entries_text"]
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Newsletter")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_feed_only_sources_preserve_feed_behavior_without_history(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_digest_entries.side_effect = [
+        [{"id": 1, "title": "Daily digest", "published_at": 100, "content": "<p>Daily</p>"}],
+        [{"id": 2, "title": "Weekly digest", "published_at": 200, "content": "<p>Weekly</p>"}],
+    ]
+    mock_client.import_entry.return_value = 100
+
+    run_digest(
+        _config(sources=[{"kind": "feed", "id": 10}, {"kind": "feed", "id": 11}]),
+        0,
+        until_timestamp=300,
+    )
+
+    assert [call.kwargs for call in mock_client.fetch_digest_entries.call_args_list] == [
+        {"feed_id": 10, "published_after": 0, "published_before": 300},
+        {"feed_id": 11, "published_after": 0, "published_before": 300},
+    ]
+    assert mock_client.fetch_raw_entries.call_count == 0
+    assert "HISTORICAL DIGESTS" not in mock_llm.call_args.kwargs["entries_text"]
 
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest")
@@ -175,7 +325,7 @@ def test_run_digest_feed_source(mock_client_cls, mock_llm):
     ]
     mock_client.import_entry.return_value = 200
 
-    config = _config(source={"kind": "feed", "id": 10})
+    config = _config(sources=[{"kind": "feed", "id": 10}])
     since_timestamp = 1744300000
 
     run_digest(config, since_timestamp)
@@ -228,7 +378,7 @@ def test_run_digest_passes_published_before_feed_source(mock_client_cls, mock_ll
     ]
     mock_client.import_entry.return_value = 200
 
-    config = _config(source={"kind": "feed", "id": 10})
+    config = _config(sources=[{"kind": "feed", "id": 10}])
     since_timestamp = 1000
     until_timestamp = 2000
 
@@ -253,7 +403,7 @@ def test_category_source_excludes_all_digest_feeds_and_passes_history(mock_clien
     ]
     mock_client.import_entry.return_value = 100
 
-    config = _config(digest_feed_ids={42, 43})
+    config = _config(digest_feed_ids={42, 43}, ignore=[{"type": "generated_digests"}])
 
     run_digest(config, 1000, until_timestamp=2000)
 
@@ -283,7 +433,7 @@ def test_category_source_with_only_digest_feeds_skips_history_and_llm(mock_clien
         {"id": 2, "title": "Daily Digest", "feed": {"id": 42}},
     ]
 
-    config = _config()
+    config = _config(ignore=[{"type": "generated_digests"}])
     run_digest(config, 1000, until_timestamp=2000)
 
     mock_client.fetch_digest_entries.assert_not_called()

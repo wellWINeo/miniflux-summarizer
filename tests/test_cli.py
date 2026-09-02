@@ -89,7 +89,7 @@ def test_cli_main_invokes_digest(mock_run):
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "test": {
-                "source": {"kind": "category", "id": 10},
+                "sources": [{"kind": "category", "id": 10}],
                 "target_feed_id": 1,
                 "prompt": "p",
             }
@@ -115,7 +115,7 @@ def test_cli_main_with_from_and_to(mock_run):
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "test": {
-                "source": {"kind": "category", "id": 10},
+                "sources": [{"kind": "category", "id": 10}],
                 "target_feed_id": 1,
                 "prompt": "p",
             }
@@ -143,7 +143,7 @@ def test_cli_main_with_preset(mock_run):
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "test": {
-                "source": {"kind": "category", "id": 10},
+                "sources": [{"kind": "category", "id": 10}],
                 "target_feed_id": 1,
                 "prompt": "p",
                 "presets": {
@@ -175,7 +175,7 @@ def test_cli_preset_cli_overrides(mock_run):
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "test": {
-                "source": {"kind": "category", "id": 10},
+                "sources": [{"kind": "category", "id": 10}],
                 "target_feed_id": 1,
                 "prompt": "p",
                 "presets": {
