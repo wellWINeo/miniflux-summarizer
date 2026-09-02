@@ -72,6 +72,15 @@ def _entry_key(entry: dict[str, Any]) -> tuple[str, str]:
     )
 
 
+def _entry_ids(entries: list[dict[str, Any]]) -> list[int]:
+    entry_ids: list[int] = []
+    for entry in entries:
+        entry_id = entry.get("id")
+        if isinstance(entry_id, int) and not isinstance(entry_id, bool):
+            entry_ids.append(entry_id)
+    return entry_ids
+
+
 def _published_sort_key(entry: dict[str, Any]) -> tuple[int, float | str]:
     published_at = entry.get("published_at")
     if isinstance(published_at, bool) or published_at is None:
@@ -251,3 +260,8 @@ def run_digest(
     )
 
     logger.info("Imported digest entry %d into feed %d", entry_id, config.agent.target_feed_id)
+
+    if config.agent.autoread:
+        current_entry_ids = _entry_ids(filtered)
+        if current_entry_ids:
+            client.update_entries(current_entry_ids, "read")

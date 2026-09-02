@@ -111,6 +111,14 @@ def test_import_entry(client):
         assert body["external_id"] == "miniflux-summarizer:test:2026-04-18"
 
 
+def test_update_entries(client, mock_miniflux):
+    mock_miniflux.update_entries.return_value = True
+
+    assert client.update_entries([1, 2], "read") is True
+
+    mock_miniflux.update_entries.assert_called_once_with([1, 2], "read")
+
+
 def test_fetch_raw_entries_paginates_when_total_exceeds_limit(client, mock_miniflux):
     batch1 = [{"id": i, "title": f"Article {i}"} for i in range(1, 1001)]
     batch2 = [{"id": i, "title": f"Article {i}"} for i in range(1001, 1051)]
