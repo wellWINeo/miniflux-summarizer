@@ -107,6 +107,17 @@ def test_merge_entries_deduplicates_ids_and_stable_fallbacks_in_chronological_or
     assert result[1]["title"] == "Later"
 
 
+def test_merge_entries_tie_breaks_equal_publication_timestamps_deterministically():
+    first_source = [{"id": 2, "title": "Second", "published_at": 100}]
+    second_source = [{"id": 1, "title": "First", "published_at": 100}]
+
+    result = _merge_entries([first_source, second_source])
+    reversed_result = _merge_entries([second_source, first_source])
+
+    assert [entry["id"] for entry in result] == [1, 2]
+    assert [entry["id"] for entry in reversed_result] == [1, 2]
+
+
 def test_build_prompt_text_separates_current_articles_and_history():
     current = [{"title": "Current Article", "url": "https://example.com/current", "content": "<p>Update</p>"}]
     history = [{"title": "Previous Digest", "url": "https://example.com/history", "content": "<p>Old topic</p>"}]
@@ -313,6 +324,36 @@ def test_run_digest_default_history_uses_current_run_scope(mock_client_cls, mock
         published_after=since_timestamp - (run_start_timestamp - since_timestamp),
         published_before=since_timestamp,
     )
+
+
+@patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest")
+@patch("miniflux_summarizer.digest.MinifluxClient")
+def test_mixed_sources_without_to_bound_feed_to_run_start(mock_client_cls, mock_llm):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.fetch_raw_entries.return_value = [
+        {"id": 1, "title": "Current article", "published_at": 100, "content": "<p>Current</p>"},
+    ]
+    mock_client.fetch_digest_entries.return_value = []
+    mock_client.import_entry.return_value = 100
+
+    run_start = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
+    run_start_timestamp = int(run_start.timestamp())
+    config = _config(sources=[{"kind": "all"}, {"kind": "feed", "id": 42}], digest_feed_ids=set())
+
+    with patch("miniflux_summarizer.digest.datetime") as mock_datetime:
+        mock_datetime.now.return_value = run_start
+        mock_datetime.fromtimestamp.side_effect = datetime.fromtimestamp
+
+        run_digest(config, 0)
+
+    mock_client.fetch_raw_entries.assert_called_once_with(published_after=0, published_before=run_start_timestamp)
+    assert mock_client.fetch_digest_entries.call_args_list[0].kwargs == {
+        "feed_id": 42,
+        "published_after": 0,
+        "published_before": run_start_timestamp,
+    }
+    mock_llm.assert_called_once()
 
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Newsletter")

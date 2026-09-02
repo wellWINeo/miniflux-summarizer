@@ -524,7 +524,7 @@ def test_import_entry(client):
             url="https://example.com/digest",
             content="<p>content</p>",
             published_at=1700000000,
-            external_id="miniflux-summarizer:test:2026-04-18",
+            external_id="miniflux-summarizer:test:default:2026-04-18",
         )
         assert entry_id == 100
 ```
@@ -906,7 +906,7 @@ def run_digest(config: Config, since_timestamp: int) -> None:
     now = datetime.now(timezone.utc)
     title = generate_digest_title(config.agent_name, now)
     date_str = now.strftime("%Y-%m-%d")
-    external_id = f"miniflux-summarizer:{config.agent_name}:{date_str}"
+    external_id = f"miniflux-summarizer:{config.agent_name}:default:{date_str}"
     url = f"{config.miniflux_base_url}/digest/{config.agent_name}/{date_str}"
 
     entry_id = client.import_entry(

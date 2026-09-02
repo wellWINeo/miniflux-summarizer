@@ -90,6 +90,11 @@ def _published_sort_key(entry: dict[str, Any]) -> tuple[int, float | str]:
     return (1, str(published_at))
 
 
+def _entry_sort_key(entry: dict[str, Any]) -> tuple[int, tuple[str, str]]:
+    entry_key = _entry_key(entry)
+    return (0 if entry_key[0] == "id" else 1, entry_key)
+
+
 def _merge_entries(entry_batches: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
     unique_entries: dict[tuple[str, str], dict[str, Any]] = {}
     for batch in entry_batches:
@@ -100,7 +105,7 @@ def _merge_entries(entry_batches: list[list[dict[str, Any]]]) -> list[dict[str, 
 
     return sorted(
         unique_entries.values(),
-        key=_published_sort_key,
+        key=lambda entry: (_published_sort_key(entry), _entry_sort_key(entry)),
     )
 
 
@@ -155,6 +160,7 @@ def run_digest(
 
     run_start_timestamp = int(datetime.now(UTC).timestamp())
     period_end = until_timestamp if until_timestamp is not None else run_start_timestamp
+    feed_period_end = period_end if has_raw_source else until_timestamp
 
     entry_batches: list[list[dict[str, Any]]] = []
     for source in sources:
@@ -184,7 +190,7 @@ def run_digest(
             entries = client.fetch_digest_entries(
                 feed_id=feed_id,
                 published_after=since_timestamp,
-                published_before=until_timestamp,
+                published_before=feed_period_end,
             )
         entry_batches.append(entries)
 

@@ -116,7 +116,7 @@ Content-Type: application/json
   "content": "<digest HTML content>",
   "published_at": 1744944000,
   "status": "unread",
-  "external_id": "miniflux-summarizer:tech-daily:2026-04-18"
+  "external_id": "miniflux-summarizer:tech-daily:default:2026-04-18"
 }
 ```
 
