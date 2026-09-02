@@ -453,11 +453,15 @@ def run_digest(config: Config, since_timestamp: int, until_timestamp: int | None
 Pass `published_before` to fetch calls:
 
 ```python
-if config.agent.source == "raw_entries":
-    entries = client.fetch_raw_entries(published_after=since_timestamp, published_before=until_timestamp)
+if config.agent.source["kind"] == "category":
+    entries = client.fetch_category_entries(
+        category_id=config.agent.source["id"],
+        published_after=since_timestamp,
+        published_before=until_timestamp,
+    )
 else:
     entries = client.fetch_digest_entries(
-        feed_id=config.agent.source_feed_id,
+        feed_id=config.agent.source["id"],
         published_after=since_timestamp,
         published_before=until_timestamp,
     )
@@ -503,7 +507,7 @@ def test_cli_main_with_from_and_to(mock_run):
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "test": {
-                "source": "raw_entries",
+                "source": { "kind": "category", "id": 10 },
                 "target_feed_id": 1,
                 "prompt": "p",
             }
@@ -528,7 +532,7 @@ def test_cli_main_with_preset(mock_run):
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "test": {
-                "source": "raw_entries",
+                "source": { "kind": "category", "id": 10 },
                 "target_feed_id": 1,
                 "prompt": "p",
                 "presets": {
@@ -557,7 +561,7 @@ def test_cli_preset_cli_overrides(mock_run):
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "test": {
-                "source": "raw_entries",
+                "source": { "kind": "category", "id": 10 },
                 "target_feed_id": 1,
                 "prompt": "p",
                 "presets": {
@@ -667,7 +671,7 @@ Add presets to the `tech-daily` agent:
 {
   "agents": {
     "tech-daily": {
-      "source": "raw_entries",
+      "source": { "kind": "category", "id": 10 },
       "target_feed_id": 57,
       "prompt": "Summarize these articles into a concise digest, provide links to full articles:",
       "ignore": [
@@ -690,8 +694,7 @@ Add presets to the `tech-daily` agent:
       }
     },
     "tech-weekly": {
-      "source": "digests",
-      "source_feed_id": 42,
+      "source": { "kind": "feed", "id": 42 },
       "target_feed_id": 43,
       "prompt": "Create a weekly newsletter from these daily digests...",
       "ignore": []

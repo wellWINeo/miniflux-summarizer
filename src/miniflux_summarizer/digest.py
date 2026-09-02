@@ -6,7 +6,7 @@ import markdown  # type: ignore[import-untyped]
 from markdownify import markdownify as html_to_markdown
 
 from miniflux_summarizer.client import MinifluxClient
-from miniflux_summarizer.config import Config
+from miniflux_summarizer.config import Config, parse_source
 from miniflux_summarizer.filter import should_ignore
 from miniflux_summarizer.llm import generate_summary
 
@@ -112,34 +112,27 @@ def run_digest(
         api_key=config.miniflux_api_key,
     )
 
-    valid_sources = ("raw_entries", "digests")
-    if config.agent.source not in valid_sources:
-        raise ValueError(
-            f"Invalid source '{config.agent.source}' for agent '{config.agent_name}'. "
-            f"Must be one of {valid_sources}"
-        )
+    source = parse_source(config.agent.source, config.agent_name)
+    source_kind = source["kind"]
+    source_id = source["id"]
 
     run_start_timestamp = int(datetime.now(UTC).timestamp())
     period_end = until_timestamp if until_timestamp is not None else run_start_timestamp
 
-    if config.agent.source == "raw_entries":
-        entries = client.fetch_raw_entries(
+    if source_kind == "category":
+        entries = client.fetch_category_entries(
+            category_id=source_id,
             published_after=since_timestamp,
             published_before=period_end,
         )
     else:
-        source_feed_id = config.agent.source_feed_id
-        if source_feed_id is None:
-            raise ValueError(
-                f"Agent '{config.agent_name}' with source 'digests' requires 'source_feed_id'"
-            )
         entries = client.fetch_digest_entries(
-            feed_id=source_feed_id,
+            feed_id=source_id,
             published_after=since_timestamp,
             published_before=until_timestamp,
         )
 
-    if config.agent.source == "raw_entries":
+    if source_kind == "category":
         current_entries = _exclude_digest_feed_entries(entries, config.digest_feed_ids)
     else:
         current_entries = entries
@@ -155,7 +148,7 @@ def run_digest(
     entries_text = build_entries_text(filtered)
     system_prompt = config.agent.prompt
 
-    if config.agent.source == "raw_entries":
+    if source_kind == "category":
         history_duration = config.agent.history_lookback or (period_end - since_timestamp)
         history_start = since_timestamp - history_duration
         history_batches = [

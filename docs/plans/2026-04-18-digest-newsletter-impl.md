@@ -4,7 +4,7 @@
 
 **Goal:** Build a CLI tool that generates LLM-powered digests and newsletters from Miniflux RSS entries, executed periodically via cron/systemd timers.
 
-**Architecture:** CLI tool fetches entries from Miniflux API, filters them, sends to an OpenAI-compatible LLM for summarization, and imports the result as a new entry into a target feed. Two agent modes: `raw_entries` (digests from raw feed entries) and `digests` (newsletters from existing digest entries).
+**Architecture:** CLI tool fetches entries from Miniflux API, filters them, sends to an OpenAI-compatible LLM for summarization, and imports the result as a new entry into a target feed. Two source kinds: `category` (digests from raw RSS entries in a category) and `feed` (newsletters from existing digest entries).
 
 **Tech Stack:** Python 3.12+, miniflux Python client, httpx, openai SDK, markdownify, Nix flakes for build/packaging.
 
@@ -170,7 +170,7 @@ MINIMAL_CONFIG = {
     },
     "agents": {
         "test-agent": {
-            "source": "raw_entries",
+            "source": { "kind": "category", "id": 10 },
             "target_feed_id": 42,
             "prompt": "Summarize",
         },
@@ -187,19 +187,18 @@ def test_load_config_minimal():
     assert cfg.llm_base_url == "https://api.openai.com/v1"
     assert cfg.llm_api_key == "sk-test"
     assert cfg.agent_name == "test-agent"
-    assert cfg.source == "raw_entries"
+    assert cfg.source == {"kind": "category", "id": 10}
     assert cfg.target_feed_id == 42
     assert cfg.prompt == "Summarize"
     assert cfg.ignore == []
 
 
-def test_load_config_with_digests_source():
+def test_load_config_with_feed_source():
     data = {
         **MINIMAL_CONFIG,
         "agents": {
             "weekly": {
-                "source": "digests",
-                "source_feed_id": 10,
+                "source": { "kind": "feed", "id": 10 },
                 "target_feed_id": 20,
                 "prompt": "Newsletter",
             },
@@ -207,8 +206,7 @@ def test_load_config_with_digests_source():
     }
     path = _write_config(data)
     cfg = load_config(path, "weekly")
-    assert cfg.source == "digests"
-    assert cfg.source_feed_id == 10
+    assert cfg.source == {"kind": "feed", "id": 10}
     assert cfg.target_feed_id == 20
 
 
@@ -238,12 +236,11 @@ def test_load_config_unknown_agent_raises():
         load_config(path, "nonexistent")
 
 
-def test_load_config_digests_without_source_feed_id_raises():
+def test_load_config_without_source_raises():
     data = {
         **MINIMAL_CONFIG,
         "agents": {
             "bad": {
-                "source": "digests",
                 "target_feed_id": 20,
                 "prompt": "Newsletter",
             },
@@ -271,10 +268,9 @@ from pathlib import Path
 @dataclass
 class AgentConfig:
     name: str
-    source: str
+    source: SourceConfig
     target_feed_id: int
     prompt: str
-    source_feed_id: int | None = None
     ignore: list[dict[str, str]] = field(default_factory=list)
 
 
@@ -298,16 +294,11 @@ def load_config(config_path: Path, agent_name: str) -> Config:
 
     agent_raw = raw["agents"][agent_name]
 
-    if agent_raw["source"] == "digests" and "source_feed_id" not in agent_raw:
-        print(f"Error: agent '{agent_name}' with source 'digests' requires 'source_feed_id'", file=sys.stderr)
-        sys.exit(1)
-
     agent = AgentConfig(
         name=agent_name,
-        source=agent_raw["source"],
+        source=parse_source(agent_raw["source"], agent_name),
         target_feed_id=agent_raw["target_feed_id"],
         prompt=agent_raw["prompt"],
-        source_feed_id=agent_raw.get("source_feed_id"),
         ignore=agent_raw.get("ignore", []),
     )
 
@@ -740,7 +731,7 @@ from miniflux_summarizer.config import AgentConfig, Config
 from miniflux_summarizer.digest import build_entries_text, generate_digest_title, run_digest
 
 
-def _config(source="raw_entries", source_feed_id=None):
+def _config(source={"kind": "category", "id": 10}):
     return Config(
         miniflux_base_url="https://reader.example.com",
         miniflux_api_key="test-key",
@@ -753,7 +744,6 @@ def _config(source="raw_entries", source_feed_id=None):
             source=source,
             target_feed_id=42,
             prompt="Summarize these articles.",
-            source_feed_id=source_feed_id,
         ),
     )
 
@@ -782,7 +772,7 @@ def test_build_entries_text():
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
 @patch("miniflux_summarizer.digest.MinifluxClient")
-def test_run_digest_raw_entries(mock_client_cls, mock_llm):
+def test_run_digest_category_source(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
     mock_client.fetch_raw_entries.return_value = [
@@ -802,7 +792,7 @@ def test_run_digest_raw_entries(mock_client_cls, mock_llm):
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Newsletter")
 @patch("miniflux_summarizer.digest.MinifluxClient")
-def test_run_digest_digests_source(mock_client_cls, mock_llm):
+def test_run_digest_feed_source(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
     mock_client.fetch_digest_entries.return_value = [
@@ -810,7 +800,7 @@ def test_run_digest_digests_source(mock_client_cls, mock_llm):
     ]
     mock_client.import_entry.return_value = 200
 
-    config = _config(source="digests", source_feed_id=10)
+    config = _config(source={"kind": "feed", "id": 10})
     since_timestamp = 1744300000
 
     run_digest(config, since_timestamp)
@@ -874,11 +864,14 @@ def run_digest(config: Config, since_timestamp: int) -> None:
         api_key=config.miniflux_api_key,
     )
 
-    if config.agent.source == "raw_entries":
-        entries = client.fetch_raw_entries(published_after=since_timestamp)
+    if config.agent.source["kind"] == "category":
+        entries = client.fetch_category_entries(
+            category_id=config.agent.source["id"],
+            published_after=since_timestamp,
+        )
     else:
         entries = client.fetch_digest_entries(
-            feed_id=config.agent.source_feed_id,
+            feed_id=config.agent.source["id"],
             published_after=since_timestamp,
         )
 
@@ -984,7 +977,7 @@ def test_cli_main_invokes_digest(mock_run):
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "test": {
-                "source": "raw_entries",
+                "source": { "kind": "category", "id": 10 },
                 "target_feed_id": 1,
                 "prompt": "p",
             }
@@ -1089,13 +1082,13 @@ from unittest.mock import MagicMock, patch
 from miniflux_summarizer.cli import main
 
 
-def test_full_pipeline_raw_entries():
+def test_full_pipeline_category_source():
     config_data = {
         "miniflux": {"base_url": "https://r.example.com", "api_key": "k"},
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "daily": {
-                "source": "raw_entries",
+                "source": { "kind": "category", "id": 10 },
                 "target_feed_id": 42,
                 "prompt": "Summarize",
             }
@@ -1141,14 +1134,13 @@ def test_full_pipeline_raw_entries():
         assert body["external_id"].startswith("miniflux-summarizer:daily:")
 
 
-def test_full_pipeline_digests():
+def test_full_pipeline_feed_source():
     config_data = {
         "miniflux": {"base_url": "https://r.example.com", "api_key": "k"},
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "weekly": {
-                "source": "digests",
-                "source_feed_id": 42,
+                "source": { "kind": "feed", "id": 42 },
                 "target_feed_id": 43,
                 "prompt": "Newsletter",
             }

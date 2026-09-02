@@ -6,8 +6,8 @@
 
 The domain is personal or team news curation and scheduled content aggregation. It is intended to run non-interactively from cron or systemd timers:
 
-- A `raw_entries` agent turns source RSS articles into a digest.
-- A `digests` agent turns previously generated digest entries from one feed into a newsletter in another feed.
+- A `category` source turns raw RSS articles from one Miniflux category into a digest.
+- A `feed` source turns previously generated digest entries from one feed into a newsletter in another feed.
 - Agent prompts define the editorial behavior; the application does not impose a summary format beyond converting the returned Markdown to HTML.
 
 ## Tech Stack
@@ -76,8 +76,8 @@ Execution flow: CLI → config and preset loading → fetch entries → filter �
 
 ### Sources And Filtering
 
-- `raw_entries` fetches all read and unread entries across feeds after the start timestamp.
-- `digests` fetches entries from the configured `source_feed_id`; this field is mandatory for that source mode.
+- `category` fetches all read and unread RSS entries from the configured source category after the start timestamp.
+- `feed` fetches entries from the configured source feed; the source object is mandatory and identifies the feed ID.
 - Retrieval is ordered ascending by publication time and paginated in batches of 1,000. Preserve this behavior when changing client calls so large time windows are complete.
 - Ignore rules support `subject` (case-insensitive title substring), `feed_id`, and `category_id`. Unknown rules currently do not match anything.
 
@@ -96,9 +96,9 @@ The JSON configuration has three top-level sections:
 
 - `miniflux`: `base_url` and `api_key`.
 - `llm`: `model`, `base_url`, and `api_key` for an OpenAI-compatible endpoint.
-- `agents`: named agent objects with `source`, `target_feed_id`, `prompt`, optional `source_feed_id`, `ignore`, and `presets`.
+- `agents`: named agent objects with structured `source`, `target_feed_id`, `prompt`, optional `history_lookback`, `ignore`, and `presets`.
 
-Each preset may provide `title`, `from`, and `to`. `load_config()` raises `ValueError` for an unknown agent, unknown selected preset, or a `digests` agent without `source_feed_id`; keep configuration parsing library-friendly rather than calling `sys.exit()` there.
+`source` must be an object of the form `{ "kind": "category" | "feed", "id": integer }`. `category` selects raw RSS entries from a Miniflux category; `feed` selects digest entries from a Miniflux feed. `load_config()` raises `ValueError` for an unknown agent, unknown selected preset, or a missing, malformed, unsupported, or non-integer source; keep configuration parsing library-friendly rather than calling `sys.exit()` there.
 
 The LLM request uses the configured prompt as the system message and all formatted entries as the user message. Both LLM and entry-import requests have a 60-second timeout. LLM `APIError` exceptions are converted to `RuntimeError`; do not silently discard failed generation or import operations.
 

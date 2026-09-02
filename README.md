@@ -19,7 +19,7 @@ Designed for periodic execution via cron or systemd timers.
 nix build
 
 # Run directly
-nix run . -- --config config.json --agent tech-daily --since=-1d
+nix run . -- --config config.json --agent tech-daily --from=-1d
 ```
 
 ### Pip
@@ -31,9 +31,9 @@ pip install .
 ## Usage
 
 ```bash
-miniflux-summarizer --config config.json --agent tech-daily --since=-1d
-miniflux-summarizer --config config.json --agent tech-weekly --since=-7d
-miniflux-summarizer --config config.json --agent tech-monthly --since=-1m
+miniflux-summarizer --config config.json --agent tech-daily --from=-1d
+miniflux-summarizer --config config.json --agent tech-weekly --from=-7d
+miniflux-summarizer --config config.json --agent tech-monthly --from=-1m
 ```
 
 ### Flags
@@ -42,7 +42,10 @@ miniflux-summarizer --config config.json --agent tech-monthly --since=-1m
 |------|-------------|
 | `--config` | Path to JSON config file |
 | `--agent` | Agent name from config |
-| `--since` | Relative time period: `-Nh`, `-Nd`, `-Nw`, `-Nm` |
+| `--from` | Start time: relative `-Nh`, `-Nd`, `-Nw`, `-Nm`, or an ISO-8601 datetime |
+| `--to` | Optional end time; defaults to now |
+| `--title` | Optional title template using `{{date}}` and `{{agent_name}}` |
+| `--preset` | Optional preset name from the agent config |
 
 ## Configuration
 
@@ -59,7 +62,7 @@ miniflux-summarizer --config config.json --agent tech-monthly --since=-1m
   },
   "agents": {
     "tech-daily": {
-      "source": "raw_entries",
+      "source": { "kind": "category", "id": 10 },
       "target_feed_id": 42,
       "history_lookback": "-7d",
       "prompt": "Summarize these articles into a concise digest...",
@@ -70,8 +73,7 @@ miniflux-summarizer --config config.json --agent tech-monthly --since=-1m
       ]
     },
     "tech-weekly": {
-      "source": "digests",
-      "source_feed_id": 42,
+      "source": { "kind": "feed", "id": 42 },
       "target_feed_id": 43,
       "prompt": "Create a weekly newsletter from these daily digests...",
       "ignore": []
@@ -84,10 +86,10 @@ miniflux-summarizer --config config.json --agent tech-monthly --since=-1m
 
 | Source | Description |
 |--------|-------------|
-| `raw_entries` | Fetches entries from all feeds, summarizes them into one digest |
-| `digests` | Reads existing digest entries from `source_feed_id`, accumulates into a newsletter |
+| `category` | Fetches raw RSS entries from the Miniflux category identified by `source.id`, summarizes them into one digest |
+| `feed` | Reads existing digest entries from the Miniflux feed identified by `source.id`, accumulates them into a newsletter |
 
-For `raw_entries` agents, every configured agent `target_feed_id` is excluded from the current run so generated digests do not re-enter the live news stream. The tool then fetches the preceding history window from each unique digest feed and passes it to the LLM as labeled context. `history_lookback` is optional and defaults to the current run scope. Historical entries are context only: the model should include a historical topic only when current-period articles contain a new fact, event, development, or meaningful change. `digests` agents retain their existing explicit `source_feed_id` behavior and do not use this raw-entry history flow.
+Every agent requires a structured `source` object with `kind` set to `category` or `feed` and an integer `id`. Category sources use the raw-entry flow: every configured agent `target_feed_id` is excluded from the current run so generated digests do not re-enter the live news stream. The tool then fetches the preceding history window from each unique digest feed and passes it to the LLM as labeled context. `history_lookback` is optional and defaults to the current run scope. Historical entries are context only: the model should include a historical topic only when current-period articles contain a new fact, event, development, or meaningful change. Feed sources use the digest-entry flow and do not receive this raw-entry history context.
 
 | Field | Description |
 |-------|-------------|
@@ -121,7 +123,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/miniflux-summarizer --config /etc/miniflux-summarizer/config.json --agent tech-daily --since=-1d
+ExecStart=/usr/bin/miniflux-summarizer --config /etc/miniflux-summarizer/config.json --agent tech-daily --from=-1d
 ```
 
 ```ini

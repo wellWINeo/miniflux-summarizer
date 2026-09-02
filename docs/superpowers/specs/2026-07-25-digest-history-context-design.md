@@ -6,9 +6,10 @@ Design approved for implementation.
 
 ## Problem
 
-`raw_entries` agents fetch entries from all Miniflux feeds. Generated daily,
-weekly, or monthly digests are also Miniflux entries, so a later raw-entry run
-can send previous generated digests to the LLM as if they were new articles.
+`category` sources fetch entries from a configured Miniflux category. Generated
+daily, weekly, or monthly digests are also Miniflux entries, so a later
+category-source run can send previous generated digests to the LLM as if they
+were new articles.
 The model may then repeat topics for several days.
 
 The solution must prevent generated digests from entering the current-news
@@ -24,13 +25,13 @@ continuity and describe meaningful updates.
 - Make the history window configurable, with a default matching the current
   run scope.
 - Ensure historical context alone can never cause a new digest to be created.
-- Preserve the existing behavior of `source: "digests"` agents.
+- Preserve the existing behavior of `source.kind: "feed"` agents.
 
 ## Non-Goals
 
 - Semantic duplicate detection across unrelated RSS articles.
 - Post-processing or validation of the LLM's generated text.
-- Changing how newsletter agents consume their explicit `source_feed_id`.
+- Changing how newsletter agents consume their explicit `source.id`.
 - Adding a new dependency or a persistent state store.
 
 ## Configuration
@@ -39,7 +40,7 @@ Add an optional `history_lookback` field to an agent configuration:
 
 ```json
 {
-  "source": "raw_entries",
+  "source": { "kind": "category", "id": 10 },
   "target_feed_id": 57,
   "history_lookback": "-7d",
   "prompt": "Summarize the current articles..."
@@ -110,10 +111,10 @@ Historical entries are not passed through the selected agent's raw-entry
 ignore rules. They are context from the configured digest feeds, not current
 source articles.
 
-### Digest-source agents
+### Feed-source agents
 
-Agents with `source: "digests"` continue to fetch only their configured
-`source_feed_id` for the requested period. They do not receive the additional
+Agents with `source.kind: "feed"` continue to fetch only their configured
+`source.id` for the requested period. They do not receive the additional
 all-agent historical context section. Their existing weekly/monthly merge
 prompt remains authoritative.
 
@@ -198,7 +199,7 @@ No API or dependency changes are required.
 - The LLM receives clearly separated current and historical sections.
 - Only historical entries produce no LLM call or import.
 - A raw-entry run with no historical entries still generates normally.
-- A `source: "digests"` run retains its existing fetch and prompt behavior.
+- A `source.kind: "feed"` run retains its existing fetch and prompt behavior.
 
 ### Integration coverage
 

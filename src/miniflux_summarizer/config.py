@@ -2,6 +2,14 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal, TypedDict, cast
+
+SourceKind = Literal["category", "feed"]
+
+
+class SourceConfig(TypedDict):
+    kind: SourceKind
+    id: int
 
 
 @dataclass
@@ -14,10 +22,9 @@ class PresetConfig:
 @dataclass
 class AgentConfig:
     name: str
-    source: str
+    source: SourceConfig
     target_feed_id: int
     prompt: str
-    source_feed_id: int | None = None
     history_lookback: int | None = None
     ignore: list[dict[str, str]] = field(default_factory=list)
     presets: dict[str, PresetConfig] = field(default_factory=dict)
@@ -35,7 +42,7 @@ class Config:
     digest_feed_ids: set[int]
 
     @property
-    def source(self) -> str:
+    def source(self) -> SourceConfig:
         return self.agent.source
 
     @property
@@ -45,10 +52,6 @@ class Config:
     @property
     def prompt(self) -> str:
         return self.agent.prompt
-
-    @property
-    def source_feed_id(self) -> int | None:
-        return self.agent.source_feed_id
 
     @property
     def ignore(self) -> list[dict[str, str]]:
@@ -71,6 +74,25 @@ def parse_history_lookback(value: str) -> int:
     return amount * multipliers[match.group(2)]
 
 
+def parse_source(value: object, agent_name: str) -> SourceConfig:
+    if not isinstance(value, dict):
+        raise ValueError(f"Error: agent '{agent_name}' source must be an object with 'kind' and integer 'id'")
+
+    if "kind" not in value:
+        raise ValueError(f"Error: agent '{agent_name}' source requires 'kind'")
+    kind = value["kind"]
+    if kind not in ("category", "feed"):
+        raise ValueError(f"Error: agent '{agent_name}' source kind must be 'category' or 'feed'")
+
+    if "id" not in value:
+        raise ValueError(f"Error: agent '{agent_name}' source requires 'id'")
+    source_id = value["id"]
+    if isinstance(source_id, bool) or not isinstance(source_id, int):
+        raise ValueError(f"Error: agent '{agent_name}' source id must be an integer")
+
+    return {"kind": cast(SourceKind, kind), "id": source_id}
+
+
 def load_config(config_path: Path, agent_name: str, preset_name: str | None = None) -> Config:
     raw = json.loads(Path(config_path).read_text())
 
@@ -79,8 +101,10 @@ def load_config(config_path: Path, agent_name: str, preset_name: str | None = No
 
     agent_raw = raw["agents"][agent_name]
 
-    if agent_raw["source"] == "digests" and "source_feed_id" not in agent_raw:
-        raise ValueError(f"Error: agent '{agent_name}' with source 'digests' requires 'source_feed_id'")
+    if "source" not in agent_raw:
+        raise ValueError(f"Error: agent '{agent_name}' requires 'source'")
+
+    source = parse_source(agent_raw["source"], agent_name)
 
     history_lookback_raw = agent_raw.get("history_lookback")
     history_lookback = (
@@ -99,10 +123,9 @@ def load_config(config_path: Path, agent_name: str, preset_name: str | None = No
 
     agent = AgentConfig(
         name=agent_name,
-        source=agent_raw["source"],
+        source=source,
         target_feed_id=agent_raw["target_feed_id"],
         prompt=agent_raw["prompt"],
-        source_feed_id=agent_raw.get("source_feed_id"),
         history_lookback=history_lookback,
         ignore=agent_raw.get("ignore", []),
         presets=presets,

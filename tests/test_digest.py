@@ -14,7 +14,10 @@ from miniflux_summarizer.digest import (
 )
 
 
-def _config(source="raw_entries", source_feed_id=None, digest_feed_ids=None, history_lookback=None):
+def _config(source=None, digest_feed_ids=None, history_lookback=None):
+    if source is None:
+        source = {"kind": "category", "id": 10}
+
     return Config(
         miniflux_base_url="https://reader.example.com",
         miniflux_api_key="test-key",
@@ -27,7 +30,6 @@ def _config(source="raw_entries", source_feed_id=None, digest_feed_ids=None, his
             source=source,
             target_feed_id=42,
             prompt="Summarize these articles.",
-            source_feed_id=source_feed_id,
             history_lookback=history_lookback,
         ),
         digest_feed_ids={42} if digest_feed_ids is None else digest_feed_ids,
@@ -107,10 +109,10 @@ def test_build_prompt_text_omits_empty_history_section():
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
 @patch("miniflux_summarizer.digest.MinifluxClient")
-def test_run_digest_raw_entries(mock_client_cls, mock_llm):
+def test_run_digest_category_source(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"title": "Article 1", "url": "https://example.com/1", "content": "<p>Content 1</p>", "feed": {"id": 1, "category": {"id": 10}}},
     ]
     mock_client.import_entry.return_value = 100
@@ -121,8 +123,8 @@ def test_run_digest_raw_entries(mock_client_cls, mock_llm):
 
     run_digest(config, since_timestamp, until_timestamp=until_timestamp)
 
-    mock_client.fetch_raw_entries.assert_called_once_with(
-        published_after=since_timestamp, published_before=until_timestamp
+    mock_client.fetch_category_entries.assert_called_once_with(
+        category_id=10, published_after=since_timestamp, published_before=until_timestamp
     )
     mock_llm.assert_called_once()
     import_call = mock_client.import_entry.call_args
@@ -134,7 +136,7 @@ def test_run_digest_raw_entries(mock_client_cls, mock_llm):
 def test_run_digest_default_history_uses_current_run_scope(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"title": "Current", "url": "https://example.com/current", "content": "<p>New</p>", "feed": {"id": 1}},
     ]
     mock_client.fetch_digest_entries.return_value = []
@@ -151,7 +153,8 @@ def test_run_digest_default_history_uses_current_run_scope(mock_client_cls, mock
 
         run_digest(config, since_timestamp)
 
-    mock_client.fetch_raw_entries.assert_called_once_with(
+    mock_client.fetch_category_entries.assert_called_once_with(
+        category_id=10,
         published_after=since_timestamp,
         published_before=run_start_timestamp,
     )
@@ -164,7 +167,7 @@ def test_run_digest_default_history_uses_current_run_scope(mock_client_cls, mock
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Newsletter")
 @patch("miniflux_summarizer.digest.MinifluxClient")
-def test_run_digest_digests_source(mock_client_cls, mock_llm):
+def test_run_digest_feed_source(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
     mock_client.fetch_digest_entries.return_value = [
@@ -172,7 +175,7 @@ def test_run_digest_digests_source(mock_client_cls, mock_llm):
     ]
     mock_client.import_entry.return_value = 200
 
-    config = _config(source="digests", source_feed_id=10)
+    config = _config(source={"kind": "feed", "id": 10})
     since_timestamp = 1744300000
 
     run_digest(config, since_timestamp)
@@ -186,7 +189,7 @@ def test_run_digest_digests_source(mock_client_cls, mock_llm):
 def test_run_digest_no_entries_skips(mock_client_cls):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = []
+    mock_client.fetch_category_entries.return_value = []
 
     config = _config()
     run_digest(config, 1744900000)
@@ -199,7 +202,7 @@ def test_run_digest_no_entries_skips(mock_client_cls):
 def test_run_digest_passes_published_before(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"title": "Article 1", "url": "https://example.com/1", "content": "<p>Content 1</p>", "feed": {"id": 1, "category": {"id": 10}}},
     ]
     mock_client.import_entry.return_value = 100
@@ -210,12 +213,14 @@ def test_run_digest_passes_published_before(mock_client_cls, mock_llm):
 
     run_digest(config, since_timestamp, until_timestamp=until_timestamp)
 
-    mock_client.fetch_raw_entries.assert_called_once_with(published_after=since_timestamp, published_before=until_timestamp)
+    mock_client.fetch_category_entries.assert_called_once_with(
+        category_id=10, published_after=since_timestamp, published_before=until_timestamp
+    )
 
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest\nSummary content")
 @patch("miniflux_summarizer.digest.MinifluxClient")
-def test_run_digest_passes_published_before_digests_source(mock_client_cls, mock_llm):
+def test_run_digest_passes_published_before_feed_source(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
     mock_client.fetch_digest_entries.return_value = [
@@ -223,7 +228,7 @@ def test_run_digest_passes_published_before_digests_source(mock_client_cls, mock
     ]
     mock_client.import_entry.return_value = 200
 
-    config = _config(source="digests", source_feed_id=10)
+    config = _config(source={"kind": "feed", "id": 10})
     since_timestamp = 1000
     until_timestamp = 2000
 
@@ -234,10 +239,10 @@ def test_run_digest_passes_published_before_digests_source(mock_client_cls, mock
 
 @patch("miniflux_summarizer.digest.generate_summary", return_value="# Digest")
 @patch("miniflux_summarizer.digest.MinifluxClient")
-def test_raw_entries_exclude_all_digest_feeds_and_pass_history(mock_client_cls, mock_llm):
+def test_category_source_excludes_all_digest_feeds_and_passes_history(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"id": 1, "title": "Current", "url": "https://example.com/current", "content": "<p>New</p>", "feed": {"id": 1}},
         {"id": 2, "title": "Daily Digest", "url": "https://example.com/daily", "content": "<p>Old daily</p>", "feed": {"id": 42}},
         {"id": 3, "title": "Weekly Digest", "url": "https://example.com/weekly", "content": "<p>Old weekly</p>", "feed": {"id": 43}},
@@ -252,7 +257,9 @@ def test_raw_entries_exclude_all_digest_feeds_and_pass_history(mock_client_cls, 
 
     run_digest(config, 1000, until_timestamp=2000)
 
-    mock_client.fetch_raw_entries.assert_called_once_with(published_after=1000, published_before=2000)
+    mock_client.fetch_category_entries.assert_called_once_with(
+        category_id=10, published_after=1000, published_before=2000
+    )
     assert mock_client.fetch_digest_entries.call_count == 2
     assert [call.kwargs for call in mock_client.fetch_digest_entries.call_args_list] == [
         {"feed_id": 42, "published_after": 0, "published_before": 1000},
@@ -269,10 +276,10 @@ def test_raw_entries_exclude_all_digest_feeds_and_pass_history(mock_client_cls, 
 
 @patch("miniflux_summarizer.digest.generate_summary")
 @patch("miniflux_summarizer.digest.MinifluxClient")
-def test_raw_entries_with_only_digest_feeds_skips_history_and_llm(mock_client_cls, mock_llm):
+def test_category_source_with_only_digest_feeds_skips_history_and_llm(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"id": 2, "title": "Daily Digest", "feed": {"id": 42}},
     ]
 
@@ -289,7 +296,7 @@ def test_raw_entries_with_only_digest_feeds_skips_history_and_llm(mock_client_cl
 def test_explicit_history_lookback_uses_preceding_window(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"id": 1, "title": "Current", "feed": {"id": 1}},
     ]
     mock_client.fetch_digest_entries.return_value = []
@@ -312,7 +319,7 @@ def test_explicit_history_lookback_uses_preceding_window(mock_client_cls, mock_l
 def test_history_fetch_failure_prevents_llm_and_import(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"id": 1, "title": "Current", "feed": {"id": 1}},
     ]
     mock_client.fetch_digest_entries.side_effect = RuntimeError("history unavailable")
@@ -331,7 +338,7 @@ def test_history_fetch_failure_prevents_llm_and_import(mock_client_cls, mock_llm
 def test_run_digest_uses_custom_title(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"title": "Article 1", "url": "https://example.com/1", "content": "<p>Content 1</p>", "feed": {"id": 1, "category": {"id": 10}}},
     ]
     mock_client.import_entry.return_value = 100
@@ -350,7 +357,7 @@ def test_run_digest_uses_custom_title(mock_client_cls, mock_llm):
 def test_run_digest_url_uses_end_date(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"title": "Article 1", "url": "https://example.com/1", "content": "<p>Content 1</p>", "feed": {"id": 1, "category": {"id": 10}}},
     ]
     mock_client.import_entry.return_value = 100
@@ -370,7 +377,7 @@ def test_run_digest_url_uses_end_date(mock_client_cls, mock_llm):
 def test_run_digest_url_with_preset(mock_client_cls, mock_llm):
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
-    mock_client.fetch_raw_entries.return_value = [
+    mock_client.fetch_category_entries.return_value = [
         {"title": "Article 1", "url": "https://example.com/1", "content": "<p>Content 1</p>", "feed": {"id": 1, "category": {"id": 10}}},
     ]
     mock_client.import_entry.return_value = 100

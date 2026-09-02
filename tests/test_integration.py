@@ -5,26 +5,24 @@ from unittest.mock import MagicMock, patch
 from miniflux_summarizer.cli import main
 
 
-def test_full_pipeline_raw_entries():
+def test_full_pipeline_category_source():
     config_data = {
         "miniflux": {"base_url": "https://r.example.com", "api_key": "k"},
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "daily": {
-                "source": "raw_entries",
+                "source": {"kind": "category", "id": 10},
                 "target_feed_id": 42,
                 "prompt": "Summarize",
                 "history_lookback": "-1d",
             },
             "weekly": {
-                "source": "digests",
-                "source_feed_id": 42,
+                "source": {"kind": "feed", "id": 42},
                 "target_feed_id": 43,
                 "prompt": "Weekly",
             },
             "monthly": {
-                "source": "digests",
-                "source_feed_id": 43,
+                "source": {"kind": "feed", "id": 43},
                 "target_feed_id": 42,
                 "prompt": "Monthly",
             }
@@ -43,7 +41,7 @@ def test_full_pipeline_raw_entries():
     ):
         mock_client = MagicMock()
         mock_mf.Client.return_value = mock_client
-        mock_client.get_entries.return_value = {
+        mock_client.get_category_entries.return_value = {
             "entries": [
                 {
                     "id": 1,
@@ -93,14 +91,13 @@ def test_full_pipeline_raw_entries():
         assert mock_client.get_feed_entries.call_count == 2
 
 
-def test_full_pipeline_digests():
+def test_full_pipeline_feed_source():
     config_data = {
         "miniflux": {"base_url": "https://r.example.com", "api_key": "k"},
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "weekly": {
-                "source": "digests",
-                "source_feed_id": 42,
+                "source": {"kind": "feed", "id": 42},
                 "target_feed_id": 43,
                 "prompt": "Newsletter",
             }
@@ -152,7 +149,7 @@ def test_full_pipeline_with_filtering():
         "llm": {"model": "m", "base_url": "https://api.example.com/v1", "api_key": "k"},
         "agents": {
             "daily": {
-                "source": "raw_entries",
+                "source": {"kind": "category", "id": 10},
                 "target_feed_id": 42,
                 "prompt": "Summarize",
                 "ignore": [
@@ -174,7 +171,7 @@ def test_full_pipeline_with_filtering():
     ):
         mock_client = MagicMock()
         mock_mf.Client.return_value = mock_client
-        mock_client.get_entries.return_value = {
+        mock_client.get_category_entries.return_value = {
             "entries": [
                 {
                     "id": 1,

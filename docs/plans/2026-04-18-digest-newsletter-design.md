@@ -6,20 +6,20 @@ A CLI tool that periodically generates digests and newsletters from Miniflux RSS
 
 ## Modes
 
-- **Digest** (`source: "raw_entries"`) — Fetches raw entries from all feeds for a time period, summarizes them into a single entry.
-- **Newsletter** (`source: "digests"`) — Reads existing digest entries from a specific feed for a time period, accumulates them into a newsletter entry.
+- **Digest** (`source.kind: "category"`) — Fetches raw entries from one Miniflux category for a time period, summarizes them into a single entry.
+- **Newsletter** (`source.kind: "feed"`) — Reads existing digest entries from a specific feed for a time period, accumulates them into a newsletter entry.
 
 ## CLI Interface
 
 ```
-miniflux-summarizer --config /path/to/config.json --agent "tech-daily" --since -1d
-miniflux-summarizer --config /path/to/config.json --agent "tech-weekly" --since -7d
-miniflux-summarizer --config /path/to/config.json --agent "tech-monthly" --since -1m
+miniflux-summarizer --config /path/to/config.json --agent "tech-daily" --from=-1d
+miniflux-summarizer --config /path/to/config.json --agent "tech-weekly" --from=-7d
+miniflux-summarizer --config /path/to/config.json --agent "tech-monthly" --from=-1m
 ```
 
 - `--config` — Path to JSON config file
 - `--agent` — Agent name from config to execute
-- `--since` — Relative time period (e.g. `-1d`, `-7d`, `-1m`, `-1h`)
+- `--from` — Start time, relative or ISO-8601 (e.g. `-1d`, `-7d`, `-1m`, `-1h`)
 
 ## Configuration Format
 
@@ -36,7 +36,7 @@ miniflux-summarizer --config /path/to/config.json --agent "tech-monthly" --since
   },
   "agents": {
     "tech-daily": {
-      "source": "raw_entries",
+      "source": { "kind": "category", "id": 10 },
       "target_feed_id": 42,
       "prompt": "Summarize these articles...",
       "ignore": [
@@ -46,8 +46,7 @@ miniflux-summarizer --config /path/to/config.json --agent "tech-monthly" --since
       ]
     },
     "tech-weekly": {
-      "source": "digests",
-      "source_feed_id": 42,
+      "source": { "kind": "feed", "id": 42 },
       "target_feed_id": 43,
       "prompt": "Create a weekly newsletter from these daily digests...",
       "ignore": []
@@ -60,9 +59,8 @@ miniflux-summarizer --config /path/to/config.json --agent "tech-monthly" --since
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `source` | yes | `"raw_entries"` or `"digests"` |
+| `source` | yes | Object with `kind` (`"category"` or `"feed"`) and integer `id` |
 | `target_feed_id` | yes | Feed ID where generated entry is imported |
-| `source_feed_id` | digests only | Feed ID to read digest entries from |
 | `prompt` | yes | LLM system prompt |
 | `ignore` | no | List of filter rules |
 
@@ -81,9 +79,9 @@ CLI (cli.py)
   │
   ├─ Load config, resolve agent
   │
-  ├─ Fetch entries (fetch.py)
-  │   ├─ raw_entries: get_entries(published_after=<since>, status=['read','unread'])
-  │   └─ digests: get_feed_entries(source_feed_id, published_after=<since>)
+  ├─ Fetch entries (client.py)
+  │   ├─ category: get_category_entries(source.id, published_after=<from>, status=['read','unread'])
+  │   └─ feed: get_feed_entries(source.id, published_after=<from>)
   │
   ├─ Apply ignore filters (filter.py)
   │
@@ -129,7 +127,7 @@ miniflux-summarizer/
 │   ├── cli.py          # CLI entry point (argparse)
 │   ├── config.py       # Config loading/validation
 │   ├── client.py       # Miniflux API wrapper + import entry
-│   ├── fetch.py        # Entry fetching (raw_entries + digests)
+│   ├── client.py       # Entry fetching (category + feed) and import API
 │   ├── filter.py       # Ignore rules engine
 │   ├── llm.py          # LLM call (OpenAI-compatible)
 │   └── digest.py       # Main orchestration
